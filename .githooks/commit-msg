@@ -1,0 +1,15 @@
+#!/bin/sh
+# 删掉把功劳记给 Claude / Anthropic 的 co-author trailer。
+#
+# 原因：GitHub 会把 `Co-Authored-By:` 里的邮箱当成共同作者，于是 `claude` 账号出现在仓库的
+# Contributors 里。settings.json 里的 attribution 只能管住 CLI 自己加的那一份；这条钩子管住
+# 所有来源（包括模型自己在提交信息里写一行）。
+#
+# 只删 trailer，不动正文；末尾因删除而多出的空行一并收掉。
+f="$1"
+
+awk '
+  /^[Cc]o-[Aa]uthored-[Bb]y:/ && (/[Cc]laude/ || /[Aa]nthropic/) { next }
+  { line[++n] = $0; if ($0 ~ /[^ \t]/) last = n }
+  END { for (i = 1; i <= last; i++) print line[i] }
+' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
