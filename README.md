@@ -1,6 +1,6 @@
 # resident
 
-more-agent 的常驻层：用户只和一个 Leader 对话，由它判断每条请求该交给哪个项目。方案见 [../docs/superagent-plan.zh-CN.md](../docs/superagent-plan.zh-CN.md)。
+more-agent 的常驻层：用户只和一个 Leader 对话，由它判断每条请求该交给哪个项目。
 
 **当前是 M0 影子运行：Leader 只记录“本来会派给谁、会说什么”，不派发任何工作，也不发送任何消息。** 测试会检查源码里只有 Leader 调用会启动进程，并且不调用 `omh`。
 

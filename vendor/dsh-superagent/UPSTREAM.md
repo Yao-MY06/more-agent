@@ -15,7 +15,7 @@
 
 ## 升级方法
 
-1. 在 `../../../refs/dsh-superagent-prototype` 拉取新提交。
+1. 拉取上游的新提交（本机的只读副本在 `more-agent/refs/dsh-superagent-prototype`）。
 2. 对比 `manifest.json` 的 `unchanged` 列表，覆盖没改过的文件。
 3. 把 `modified` 列表里的改动手工合并过去。
 4. 跑 `npm run check`，再更新 `manifest.json`。
