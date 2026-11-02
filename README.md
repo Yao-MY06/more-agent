@@ -89,4 +89,6 @@ npm run check
 npm run coverage
 ```
 
+克隆后执行 `git config core.hooksPath .githooks`，lint 或类型错误就会阻断提交。
+
 格式化和 lint 用 Biome，`vendor/` 不参与。修改 `vendor/` 前先看 [UPSTREAM.md](vendor/dsh-superagent/UPSTREAM.md)。
