@@ -11,7 +11,7 @@
 - 命令：`project`、`say`、`replay`、`run`、`status`、`decisions`、`report`、`review`。
 - M1 单项目闭环：登记项目时加 `--execute`，Leader 就会把工作交给经理会话；经理用 `omh` 派工人和验收，结果由 Leader 转告。未开启的项目仍只做影子运行。
 - 经理按轮次运行，等工人时不花额度；每一轮脱离 runner，崩溃或重启后只收取一次。
-- 命令：`inbox`、`tickets`、`stop`。
+- 命令：`inbox`、`tickets`、`stop`。停止工单时等经理这一轮真正结束，再停掉工人和审查，并把 `omh` 的工单移到 `blocked`。
 
 ### 变更
 

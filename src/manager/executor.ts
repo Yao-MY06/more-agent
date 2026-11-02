@@ -23,6 +23,8 @@ import {
   type ManagerSettings,
   OMH_POLL_MS,
   type Paths,
+  TURN_STOP_POLL_MS,
+  TURN_STOP_WAIT_MS,
   WORKER_WAIT_LIMIT_MS,
 } from '../config.ts'
 import type { ExecutionSteps } from '../executor.ts'
@@ -95,10 +97,18 @@ export interface ManagerHost {
 
 const failureQuestion = (reason: string): string => `经理这一轮没有完成：${reason}。回复这条消息就会让它接着做。`
 
+async function untilTurnEnds(directory: string): Promise<void> {
+  const deadline = Date.now() + TURN_STOP_WAIT_MS
+  while (readTurn(directory).phase === 'running' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, TURN_STOP_POLL_MS))
+  }
+}
+
 export class ManagerExecutor implements ExecutionSteps {
   private readonly host: ManagerHost
   private readonly lastChecked = new Map<string, number>()
   private polling?: Promise<void>
+  private readonly stopping = new Set<Promise<void>>()
   constructor(host: ManagerHost) {
     this.host = host
   }
@@ -196,14 +206,30 @@ export class ManagerExecutor implements ExecutionSteps {
 
   private stopWorkers(job: ManagerJob, reason: string): void {
     const { host } = this
+    const stopping: Promise<void> = this.endWorkers(job, reason)
+      .catch((error: unknown) => host.notice(job.ticketId, `停止工单时查不到工人状态（${reason}）：${String(error)}`))
+      .finally(() => this.stopping.delete(stopping))
+    this.stopping.add(stopping)
+  }
+
+  private async endWorkers(job: ManagerJob, reason: string): Promise<void> {
+    const { host } = this
     const project = host.projects().find((item) => item.id === job.projectId)
     if (!project) return
-    killWorkers(host.settings.omh, project.path).then(
-      (failed) => {
-        if (failed.length) host.notice(job.ticketId, `停止工单时有工人没能停下（${reason}）：${failed.join('；')}`)
-      },
-      (error: unknown) => host.notice(job.ticketId, `停止工单时查不到工人状态（${reason}）：${String(error)}`),
-    )
+    // A turn still going could dispatch one more worker, which a look at what runs now would miss.
+    await untilTurnEnds(job.directory)
+    const failed = await killWorkers(host.settings.omh, project.path, `resident 停止了这张工单：${reason}`)
+    if (failed.length) host.notice(job.ticketId, `停止工单时有工人没能处理好（${reason}）：${failed.join('；')}`)
+  }
+
+  /** Whether workers of a stopped Ticket are still being ended, which the runner must not exit or close the database during. */
+  stoppingWorkers(): boolean {
+    return this.stopping.size > 0
+  }
+
+  /** Waits for what is in flight, so the database can close under nothing. */
+  async drain(): Promise<void> {
+    await Promise.allSettled([this.polling, ...this.stopping])
   }
 
   /** Records the turn first and starts it after the commit: a crash in between leaves a record of a dead turn, which recovery handles. */

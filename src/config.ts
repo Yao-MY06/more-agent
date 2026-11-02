@@ -31,6 +31,9 @@ export const MANAGER_TURN_TIMEOUT_MS = 60 * 60_000
 export const MANAGER_TICKET_BUDGET_USD = 15
 export const MAX_RUNNING_MANAGERS = 1
 export const OMH_POLL_MS = 5_000
+/** A killed turn is gone within the supervisor's next tick and its force-kill delay. */
+export const TURN_STOP_WAIT_MS = 15_000
+export const TURN_STOP_POLL_MS = 200
 export const OMH_CALL_TIMEOUT_MS = 20_000
 /** Longer than any worker's own hard timeout, so this only catches `omh` itself being broken. */
 export const WORKER_WAIT_LIMIT_MS = 6 * 60 * 60_000

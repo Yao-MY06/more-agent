@@ -75,7 +75,7 @@ npm run resident -- say "用第一种做法" --thread add
 | `say <文本> [--thread 话题]`                         | 提交请求，输出请求 id。在同一话题上继续说，消息会直接到负责的经理，不再经过 Leader 判断。不需要 runner 在运行             |
 | `inbox [--all] [--json]`                             | 查看 Leader 发给你的新消息，读过就不再显示；`--all` 显示全部                                                              |
 | `tickets [--json]`                                   | 查看工单：阶段、项目、等你回答的问题、轮数和经理的牌价花费                                                                |
-| `stop <工单 id 前缀> [--reason 原因]`                | 停止工单，连同它的经理和这个项目正在跑的工人                                                                              |
+| `stop <工单 id 前缀> [--reason 原因]`                | 停止工单，连同它的经理和这个项目正在跑的工人（包括审查），并把 `omh` 里对应的工单移到 `blocked`                           |
 | `replay <文件.jsonl>`                                | 回放历史请求，每行 `{id, text, thread?, expected?}`。有一行不合法就整个文件都不提交；相同 id 重放不会重复判断             |
 | `run [--until-idle]`                                 | 运行，同一状态目录只允许一个。`--until-idle` 处理完就退出                                                                 |
 | `status [--json]`                                    | 状态计数                                                                                                                  |

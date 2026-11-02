@@ -15,6 +15,10 @@ appendFileSync(
 
 const steps = JSON.parse(readFileSync(script, 'utf8'))
 const step = steps[Math.min(turn, steps.length - 1)]
+// A worker dispatched late in the turn, such as just after a stop was asked for.
+if (step.lateWorkerMs) {
+  setTimeout(() => writeFileSync('fake-omh-running.json', JSON.stringify(['T9'])), step.lateWorkerMs)
+}
 await sleep(step.delayMs ?? 0)
 if (step.stderr) console.error(step.stderr)
 if (step.raw !== undefined) console.log(step.raw)

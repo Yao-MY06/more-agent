@@ -24,6 +24,8 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const FAKE_OMH = join(HERE, 'fixtures', 'fake-omh.mjs')
 const REAL_OMH = join(HERE, '..', '..', 'opus-manager', 'harness', 'bin', 'omh.js')
 const OLD_ENOUGH_MS = 10 * 60_000
+/** Starting real processes takes seconds when the whole suite runs at once. */
+const REAL_PROCESS_TIMEOUT_MS = 30_000
 
 const home = useHome()
 const report = (overrides = {}) => ({
@@ -223,13 +225,13 @@ describe('talking to omh', () => {
   })
   it('kills every running ticket', async () => {
     writeFileSync(join(home().home, 'fake-omh-running.json'), '["T1","T2"]')
-    await expect(killWorkers(FAKE_OMH, home().home)).resolves.toEqual([])
+    await expect(killWorkers(FAKE_OMH, home().home, 'stopped')).resolves.toEqual([])
     await expect(runningTickets(FAKE_OMH, home().home)).resolves.toEqual([])
   })
   it('fails when omh cannot be read, so a caller can tell that from nothing running', async () => {
     await expect(runningTickets(join(home().home, 'missing.js'), home().home)).rejects.toThrow()
   })
-  it.runIf(existsSync(REAL_OMH))('reads the status of the real omh', async () => {
+  it.runIf(existsSync(REAL_OMH))('reads the status of the real omh', { timeout: REAL_PROCESS_TIMEOUT_MS }, async () => {
     const { spawnSync } = await import('node:child_process')
     const root = join(home().home, 'project')
     mkdirSync(root)

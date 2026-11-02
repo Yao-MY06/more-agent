@@ -191,7 +191,8 @@ export class Runtime {
       spoolFiles(this.paths).length > 0 ||
       this.store.threads.active().length > 0 ||
       !!effect ||
-      this.manager.jobs().length > 0
+      this.manager.jobs().length > 0 ||
+      this.manager.stoppingWorkers()
     )
   }
 
@@ -219,7 +220,7 @@ export class Runtime {
     this.lifetime.abort()
     await this.passes.stop()
     await this.effects.drain()
-    await this.manager.poll().catch((error: unknown) => this.report(error))
+    await this.manager.drain()
     this.store.close()
   }
 }

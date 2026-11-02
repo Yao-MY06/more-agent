@@ -429,6 +429,20 @@ describe('stopping a Ticket', { timeout: TEST_TIMEOUT_MS }, () => {
     expect(inboxTexts().join()).not.toContain('不该出现')
   })
 
+  it('catches a worker the manager dispatches while the stop is on its way', async () => {
+    setup([{ report: { state: 'ready', summary: '不该出现' }, delayMs: 60_000, lateWorkerMs: 1500 }])
+    say('1', '做这个')
+    const { runtime, release } = await open()
+    await until(() => turns().length === 1, runtime)
+    const [row] = readTickets(home())
+    await main(['stop', row?.id.slice(0, 8) ?? ''], { out: () => {}, err: () => {} }, home())
+    await until(() => readTickets(home())[0]?.outcome === 'stopped', runtime)
+    await until(() => !runtime.busy(), runtime)
+    await runtime.close()
+    await release()
+    expect(readFileSync(noticeFile(), 'utf8')).toContain('T9')
+  })
+
   it('refuses a prefix that matches nothing', async () => {
     const errors: string[] = []
     await expect(main(['stop', 'nope'], { out: () => {}, err: (line) => errors.push(line) }, home())).resolves.toBe(1)
