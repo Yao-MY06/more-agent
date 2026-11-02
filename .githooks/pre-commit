@@ -1,0 +1,3 @@
+#!/bin/sh
+# Lint and type errors block a commit. Tests run in `npm run check`; the crash test takes too long for every commit.
+npm run --silent lint && npm run --silent typecheck

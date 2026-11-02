@@ -1,0 +1,32 @@
+{
+  "name": "more-agent-resident",
+  "version": "0.1.0",
+  "description": "Resident leader layer for more-agent. M0: shadow routing only, nothing is executed.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.13.0 <25"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "resident": "node --disable-warning=ExperimentalWarning lib/bin/resident.js"
+  },
+  "dependencies": {
+    "proper-lockfile": "4.1.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@types/node": "24.10.1",
+    "@types/proper-lockfile": "4.1.4",
+    "@vitest/coverage-v8": "4.1.12",
+    "typescript": "6.0.3",
+    "vitest": "4.1.12"
+  }
+}
