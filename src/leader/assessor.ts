@@ -1,6 +1,14 @@
 /** Implements the Engine's Assessor port with one stateless Leader call per Eval, through the durable effect queue. */
 import type { Effects } from '../../vendor/dsh-superagent/src/app/effects.ts'
-import type { Assessor, Candidate, Engine, Trigger } from '../../vendor/dsh-superagent/src/core/index.ts'
+import type { Store } from '../../vendor/dsh-superagent/src/app/store.ts'
+import {
+  type Assessor,
+  type Candidate,
+  type Engine,
+  key,
+  type Outbox,
+  type Trigger,
+} from '../../vendor/dsh-superagent/src/core/index.ts'
 import { LEADER_CONCURRENCY, LEADER_RETRY_MS } from '../config.ts'
 import type { Llm } from '../llm/llm.ts'
 import type { Project } from '../projects.ts'
@@ -10,6 +18,8 @@ import { parseVerdict, toOutcome, verdictJsonSchema } from './verdict.ts'
 export interface LeaderHost {
   engine(): Pick<Engine, 'candidate' | 'candidateDelivered' | 'decide'>
   effects: Pick<Effects, 'enqueue' | 'handle'>
+  store: Pick<Store, 'atomic'>
+  outbox: Pick<Outbox, 'send'>
   llm: Llm
   projects(): Project[]
   history(candidate: Candidate): Trigger[]
@@ -51,6 +61,13 @@ export class LeaderAssessor implements Assessor {
     )
     // The Eval may have expired during the call, so only decide one that is still this call's.
     if (host.engine().candidate(triggerId)?.evalId !== evalId) return
-    host.engine().decide(triggerId, { ...toOutcome(verdict, usage), evalId })
+    const channel = candidate.triggers[0]?.channel
+    // In one transaction, so a crash cannot record the Decision and lose the question the person is waiting for.
+    host.store.atomic(() => {
+      host.engine().decide(triggerId, { ...toOutcome(verdict, usage), evalId })
+      if (verdict.action === 'clarify' && verdict.question && channel) {
+        host.outbox.send({ id: key('clarify', triggerId), channel, text: verdict.question, kind: 'reply' })
+      }
+    })
   }
 }

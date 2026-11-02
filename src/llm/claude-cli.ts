@@ -10,6 +10,7 @@ const ERROR_EXCERPT_CHARS = 500
 
 const ResultSchema = z.looseObject({
   is_error: z.boolean().optional(),
+  subtype: z.string().optional(),
   result: z.unknown().optional(),
   structured_output: z.unknown().optional(),
   total_cost_usd: z.number().optional(),
@@ -48,8 +49,11 @@ export function claudeArguments(settings: LeaderSettings, request: LlmRequest): 
 
 export function parseClaudeResult(stdout: string): LlmResult {
   const result = ResultSchema.parse(JSON.parse(stdout))
-  if (result.is_error) throw new Error(`The Leader call failed: ${String(result.result).slice(0, ERROR_EXCERPT_CHARS)}`)
-  if (result.structured_output === undefined) throw new Error('The Leader call returned no structured output')
+  if (result.is_error) {
+    const why = String(result.result ?? result.subtype ?? 'unknown error').slice(0, ERROR_EXCERPT_CHARS)
+    throw new Error(`The call failed: ${why}`)
+  }
+  if (result.structured_output === undefined) throw new Error('The call returned no structured output')
   return {
     output: result.structured_output,
     usage: {

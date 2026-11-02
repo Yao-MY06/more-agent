@@ -73,7 +73,6 @@ export interface Status {
   effects: number
   tickets: number
   wouldSay: number
-  /** Stays 0 in M0: nothing has a way to send. */
   sent: number
 }
 

@@ -155,7 +155,7 @@ describe('verdict', () => {
 describe('leader card', () => {
   const trigger = (id: string, text: string, meta = {}): Trigger => ({ ...toTrigger({ ...item, id, text }), meta })
   const candidate = (triggers: Trigger[]) => ({ evalId: 'e', triggers, tickets: [] }) as unknown as Candidate
-  const projects = [{ id: 'alpha', path: 'C:/secret/path', brief: 'b'.repeat(3000) }]
+  const projects = [{ id: 'alpha', path: 'C:/secret/path', brief: 'b'.repeat(3000), execute: false }]
 
   it('never shows a replay expected answer or a project path to the model', () => {
     const card = buildCard(candidate([trigger('1', 'hello', { expected: 'SECRET-LABEL' })]), [])

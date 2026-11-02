@@ -4,19 +4,27 @@ import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 import { leaderSettings, MAX_TEXT_CHARS, type Paths, pathsFor } from './config.ts'
+import { readInbox, takeUnread } from './inbox.ts'
 import { ClaudeCli } from './llm/claude-cli.ts'
 import { addProject, loadProjects } from './projects.ts'
 import { appendReview, decisionRows, readStatus, readSummary, renderReport, triggerExists } from './report.ts'
 import { Runtime } from './runtime.ts'
-import { spoolFiles, writeSpool } from './spool.ts'
+import { spoolFiles, writeSpool, writeSpoolCommand } from './spool.ts'
+import { readTickets, renderTicket, resolveTicketId } from './tickets-view.ts'
+
+const TICKET_ID_CHARS = 12
 
 const USAGE = `用法：resident <命令>
 
-  project add <id> <路径> [--brief 文本]   登记项目（默认取其 README 开头作简介）
+  project add <id> <路径> [--brief 文本] [--execute]
+                                           登记项目（默认取其 README 开头作简介；不加 --execute 只做影子运行）
   project list                             列出项目
-  say <文本> [--thread 话题]               提交一条请求
+  say <文本> [--thread 话题]               提交一条请求，或在某个话题上继续说
+  inbox [--all] [--json]                   查看 Leader 发给你的新消息
+  tickets [--json]                         查看工单
+  stop <工单 id 前缀> [--reason 原因]      停止工单，连同它的经理和工人
   replay <文件.jsonl>                      回放历史请求，每行 {id, text, thread?, expected?}
-  run [--until-idle]                       运行（M0 只记录判断，不执行任何工作）
+  run [--until-idle]                       运行
   status [--json]                          查看状态
   decisions                                以 JSON 列出全部决策
   report [--json]                          决策报告
@@ -48,15 +56,38 @@ const usageError = (io: Io): number => {
 const toJson = (value: unknown): string => JSON.stringify(value, null, 2)
 
 function project(args: string[], paths: Paths, io: Io): number {
-  const { values, positionals } = parseArgs({ args, options: { brief: { type: 'string' } }, allowPositionals: true })
+  const { values, positionals } = parseArgs({
+    args,
+    options: { brief: { type: 'string' }, execute: { type: 'boolean' } },
+    allowPositionals: true,
+  })
   const [action, id, path] = positionals
   if (action === 'list') {
-    for (const item of loadProjects(paths.projects)) io.out(`${item.id}\t${item.path}`)
+    for (const item of loadProjects(paths.projects)) {
+      io.out(`${item.id}\t${item.execute ? '执行' : '影子'}\t${item.path}`)
+    }
     return 0
   }
   if (action !== 'add' || !id || !path) return usageError(io)
-  const added = addProject(paths.projects, { id, path, ...(values.brief === undefined ? {} : { brief: values.brief }) })
-  io.out(`已登记 ${added.id}（简介 ${added.brief.length} 字）`)
+  const added = addProject(paths.projects, {
+    id,
+    path,
+    execute: !!values.execute,
+    ...(values.brief === undefined ? {} : { brief: values.brief }),
+  })
+  io.out(`已登记 ${added.id}（简介 ${added.brief.length} 字，${added.execute ? '会真实执行' : '只做影子运行'}）`)
+  return 0
+}
+
+function inbox(args: string[], paths: Paths, io: Io): number {
+  const { values } = parseArgs({ args, options: { all: { type: 'boolean' }, json: { type: 'boolean' } } })
+  const entries = values.all ? readInbox(paths).entries : takeUnread(paths)
+  if (values.json) {
+    io.out(JSON.stringify(entries))
+    return 0
+  }
+  if (!entries.length) io.out('没有新消息')
+  for (const entry of entries) io.out(`${entry.at} [${entry.thread.replace(/^[^:]*:/, '')}] ${entry.text}`)
   return 0
 }
 
@@ -98,7 +129,8 @@ async function run(args: string[], paths: Paths, io: Io): Promise<number> {
     io.err(`运行锁丢失，退出：${error.message}`)
     process.exit(1)
   }
-  const { runtime, release } = await Runtime.open({ paths, llm, onLockLost })
+  const onError = (error: unknown) => io.err(`后台出错：${String(error)}`)
+  const { runtime, release } = await Runtime.open({ paths, llm, onLockLost, onError })
   const stop = new AbortController()
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => stop.abort())
   try {
@@ -119,6 +151,33 @@ function status(args: string[], paths: Paths, io: Io): number {
       ? toJson(current)
       : `待接收 ${current.spoolWaiting}，请求 ${current.triggers}，评估中话题 ${current.activeThreads}，待办效果 ${current.effects}，工单 ${current.tickets}，本来会发 ${current.wouldSay}，已发 ${current.sent}`,
   )
+  return 0
+}
+
+function tickets(args: string[], paths: Paths, io: Io): number {
+  const { values } = parseArgs({ args, options: { json: { type: 'boolean' } } })
+  const rows = readTickets(paths)
+  if (values.json) io.out(toJson(rows))
+  else if (!rows.length) io.out('还没有工单')
+  else for (const row of rows) io.out(renderTicket(row))
+  return 0
+}
+
+function stop(args: string[], paths: Paths, io: Io): number {
+  const { values, positionals } = parseArgs({ args, options: { reason: { type: 'string' } }, allowPositionals: true })
+  const [prefix] = positionals
+  if (!prefix) return usageError(io)
+  const ticketId = resolveTicketId(paths, prefix)
+  if (!ticketId) {
+    io.err(`没有唯一匹配的工单：${prefix}`)
+    return 1
+  }
+  writeSpoolCommand(paths, {
+    command: 'stop',
+    ticketId,
+    ...(values.reason === undefined ? {} : { reason: values.reason }),
+  })
+  io.out(`已提交停止 ${ticketId.slice(0, TICKET_ID_CHARS)}，runner 处理后会连同工人一起停下`)
   return 0
 }
 
@@ -148,7 +207,19 @@ function review(args: string[], paths: Paths, io: Io): number {
   return 0
 }
 
-const COMMANDS: Record<string, Command> = { project, say, replay, run, status, decisions, report, review }
+const COMMANDS: Record<string, Command> = {
+  project,
+  inbox,
+  say,
+  tickets,
+  stop,
+  replay,
+  run,
+  status,
+  decisions,
+  report,
+  review,
+}
 
 /**
  * Runs one command.

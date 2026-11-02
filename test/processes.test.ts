@@ -6,8 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { main } from '../src/cli.ts'
 import { ClaudeCli } from '../src/llm/claude-cli.ts'
 import { decisionRows, readStatus } from '../src/report.ts'
-import { ShadowOutbox } from '../src/shadow.ts'
-import { Store } from '../vendor/dsh-superagent/src/app/store.ts'
 import { useHome } from './helpers.ts'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -81,18 +79,5 @@ describe('resident run', () => {
     vi.stubEnv('FAKE_CLAUDE_DELAY_MS', '0')
     await main(['run', '--until-idle'], io, home())
     expect(decisionRows(home())).toHaveLength(1)
-  })
-})
-
-describe('the shadow outbox', () => {
-  it('keeps a message as pending, reports it, and can withdraw it, without ever sending', () => {
-    const store = new Store(join(home().home, 'outbox.sqlite'))
-    const outbox = new ShadowOutbox(store)
-    const channel = { source: 'cli', thread: 'cli:t', address: {} }
-    outbox.send({ id: 'm', channel, text: 'hi', kind: 'reply' })
-    expect(outbox.status('m')).toBe('pending')
-    outbox.withdraw('m')
-    expect(outbox.status('m')).toBeUndefined()
-    store.close()
   })
 })

@@ -9,3 +9,11 @@
 - M0 影子运行：Leader（默认 Opus 5.5、中等强度）判断请求归属并记录，不执行任何工作，也不发送任何消息。
 - 引入 dsh-superagent-prototype 的引擎、存储和效果队列（MIT），连同上游测试一起运行。
 - 命令：`project`、`say`、`replay`、`run`、`status`、`decisions`、`report`、`review`。
+- M1 单项目闭环：登记项目时加 `--execute`，Leader 就会把工作交给经理会话；经理用 `omh` 派工人和验收，结果由 Leader 转告。未开启的项目仍只做影子运行。
+- 经理按轮次运行，等工人时不花额度；每一轮脱离 runner，崩溃或重启后只收取一次。
+- 命令：`inbox`、`tickets`、`stop`。
+
+### 变更
+
+- `project list` 的输出多了一列，显示 `执行` 或 `影子`。
+- Leader 需要澄清时，问题现在会进收件箱。

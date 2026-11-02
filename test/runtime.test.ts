@@ -167,7 +167,7 @@ describe('command line', () => {
     const { io, lines } = capture()
     await main(['project', 'add', 'alpha', home().home, '--brief', 'b'], io, home())
     await main(['project', 'list'], io, home())
-    expect(lines.at(-1)).toBe(`alpha\t${home().home}`)
+    expect(lines.at(-1)).toBe(`alpha\t影子\t${home().home}`)
   })
 
   it('when a request is said, it waits in the spool under the id it prints', async () => {
@@ -225,17 +225,14 @@ describe('command line', () => {
   })
 })
 
-describe('M0 boundary', () => {
+describe('process boundary', () => {
   const sourceDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
   const sources = (readdirSync(sourceDir, { recursive: true }) as string[])
     .filter((name) => name.endsWith('.ts'))
     .map((name) => ({ name: name.replaceAll('\\', '/'), text: readFileSync(join(sourceDir, name), 'utf8') }))
 
-  it('only the Leader call may start a process', () => {
+  it('only a Leader call, a manager turn and the omh client may start a process', () => {
     const spawning = sources.filter((file) => file.text.includes('node:child_process')).map((file) => file.name)
-    expect(spawning).toEqual(['llm/claude-cli.ts'])
-  })
-  it('nothing calls omh or any other worker', () => {
-    expect(sources.filter((file) => /\bomh\b/.test(file.text)).map((file) => file.name)).toEqual([])
+    expect(spawning.sort()).toEqual(['llm/claude-cli.ts', 'manager/omh.ts', 'manager/turn.ts'])
   })
 })

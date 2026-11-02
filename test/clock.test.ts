@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { monotonicClock } from '../src/clock.ts'
+import { TicketExecutor } from '../src/executor.ts'
 import { localPolicy, localScope } from '../src/policy.ts'
-import { ShadowExecutor } from '../src/shadow.ts'
+import { ShadowSteps } from '../src/shadow.ts'
 import { toTrigger } from '../src/spool.ts'
 import { type Candidate, Engine, MemoryRepositories } from '../vendor/dsh-superagent/src/core/index.ts'
 
@@ -24,7 +25,10 @@ function shadowEngine(now: () => string) {
     scope: localScope,
     policy: localPolicy,
     assessor: { request: (candidate) => candidates.push(candidate) },
-    executor: new ShadowExecutor({ engine: () => engine, effects: effects as never, store: repo }),
+    executor: new TicketExecutor({
+      effects: effects as never,
+      route: () => new ShadowSteps({ engine: () => engine, store: repo }),
+    }),
     outbox: { send: () => {}, status: () => undefined, withdraw: () => {} },
     now,
   })

@@ -12,6 +12,8 @@ const ProjectSchema = z
     id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, 'Use lowercase letters, digits and hyphens'),
     path: z.string().min(1),
     brief: z.string().max(BRIEF_CHARS),
+    /** Off by default: until a person switches it on, the project's Tickets run in shadow and nothing touches its files. */
+    execute: z.boolean().default(false),
   })
   .strict()
 export type Project = z.infer<typeof ProjectSchema>
@@ -23,11 +25,14 @@ export function loadProjects(file: string): Project[] {
 }
 
 /** Registers a project, replacing one with the same id. */
-export function addProject(file: string, input: { id: string; path: string; brief?: string }): Project {
+export function addProject(
+  file: string,
+  input: { id: string; path: string; brief?: string; execute?: boolean },
+): Project {
   const path = resolve(input.path)
   if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error(`Not a directory: ${path}`)
   const brief = (input.brief ?? readBrief(path)).slice(0, BRIEF_CHARS)
-  const project = ProjectSchema.parse({ id: input.id, path, brief })
+  const project = ProjectSchema.parse({ id: input.id, path, brief, execute: input.execute ?? false })
   const others = loadProjects(file).filter((item) => item.id !== project.id)
   saveProjects(file, [...others, project])
   return project

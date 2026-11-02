@@ -1,9 +1,9 @@
 /** The M0 acceptance test: real processes, really killed, and no request lost or decided twice. */
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { useHome } from './helpers.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -16,6 +16,9 @@ const POLL_MS = 50
 const BUILD_TIMEOUT_MS = 120_000
 const TEST_TIMEOUT_MS = 120_000
 
+const MANAGER_TURN_MS = 6_000
+const extraEnvironment: Record<string, string> = {}
+
 const home = useHome()
 const log = () => join(home().home, 'calls.jsonl')
 const callCount = () => (existsSync(log()) ? readFileSync(log(), 'utf8').split('\n').filter(Boolean).length : 0)
@@ -23,6 +26,7 @@ const callCount = () => (existsSync(log()) ? readFileSync(log(), 'utf8').split('
 function environment(): NodeJS.ProcessEnv {
   return {
     ...process.env,
+    ...extraEnvironment,
     RESIDENT_HOME: home().home,
     RESIDENT_LEADER_COMMAND: JSON.stringify([process.execPath, FAKE]),
     FAKE_CLAUDE_LOG: log(),
@@ -58,6 +62,10 @@ function kill(runner: ChildProcess): Promise<void> {
 }
 
 describe('a runner killed in the middle of its work', () => {
+  beforeEach(() => {
+    for (const name of Object.keys(extraEnvironment)) delete extraEnvironment[name]
+  })
+
   beforeAll(() => {
     const tsc = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
     const build = spawnSync(process.execPath, [tsc, '-p', join(ROOT, 'tsconfig.build.json')], {
@@ -118,6 +126,46 @@ describe('a runner killed in the middle of its work', () => {
       expect(call.args.slice(0, 5)).toEqual(['-p', '--model', 'claude-opus-5-5', '--effort', 'medium'])
       expect(call.args).toContain('--restricted')
       expect(call.cwd.toLowerCase()).toBe(home().leaderCwd.toLowerCase())
+    },
+    TEST_TIMEOUT_MS,
+  )
+
+  it(
+    'leaves a manager turn running, and the next runner collects it once without starting another',
+    async () => {
+      const project = join(home().home, 'project')
+      mkdirSync(join(project, '.omh'), { recursive: true })
+      writeFileSync(join(project, '.omh', 'config.json'), '{}')
+      const script = join(home().home, 'script.json')
+      const report = { state: 'ready', summary: 'done by the manager', question: null, wait_for: [], followups: [] }
+      writeFileSync(script, JSON.stringify([{ report, delayMs: MANAGER_TURN_MS }]))
+      const managerLog = join(home().home, 'manager.log')
+      Object.assign(extraEnvironment, {
+        RESIDENT_MANAGER_COMMAND: JSON.stringify([
+          process.execPath,
+          join(ROOT, 'test', 'fixtures', 'fake-manager.mjs'),
+        ]),
+        RESIDENT_OMH: join(ROOT, 'test', 'fixtures', 'fake-omh.mjs'),
+        RESIDENT_MANAGER_SKILL: join(ROOT, 'test', 'fixtures', 'skill.md'),
+        FAKE_MANAGER_SCRIPT: script,
+        FAKE_MANAGER_LOG: managerLog,
+      })
+      cli('project', 'add', 'demo', project, '--brief', 'Demo', '--execute')
+      cli('say', 'do the work')
+
+      const runner = startRunner()
+      while (!existsSync(managerLog)) await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+      await kill(runner)
+      const { pid } = JSON.parse(readFileSync(managerLog, 'utf8').split('\n')[0] ?? '{}') as { pid: number }
+      expect(() => process.kill(pid, 0)).not.toThrow()
+
+      cli('run', '--until-idle')
+
+      expect(readFileSync(managerLog, 'utf8').split('\n').filter(Boolean)).toHaveLength(1)
+      const inbox = JSON.parse(cli('inbox', '--all', '--json')) as { text: string }[]
+      expect(inbox.map((entry) => entry.text)).toEqual(['Fake acknowledgement.', 'Leader says: done by the manager'])
+      const tickets = JSON.parse(cli('tickets', '--json')) as { outcome: string; turns: number }[]
+      expect(tickets).toMatchObject([{ outcome: 'completed', turns: 1 }])
     },
     TEST_TIMEOUT_MS,
   )

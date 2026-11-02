@@ -28,11 +28,28 @@ export const SpoolItemSchema = z
   .strict()
 export type SpoolItem = z.infer<typeof SpoolItemSchema>
 
+const SpoolCommandSchema = z
+  .object({
+    command: z.literal('stop'),
+    ticketId: z.string().min(1),
+    reason: z.string().max(MAX_TEXT_CHARS).optional(),
+  })
+  .strict()
+export type SpoolCommand = z.infer<typeof SpoolCommandSchema>
+
 let written = 0
 
 /** Hands over one request; the rename makes it visible whole, and the counter keeps a thread's messages in order. */
 export function writeSpool(paths: Paths, item: SpoolItem): void {
-  const valid = SpoolItemSchema.parse(item)
+  writeEntry(paths, SpoolItemSchema.parse(item))
+}
+
+/** Hands over a person's command, in order with their messages: only the runner may change a Ticket. */
+export function writeSpoolCommand(paths: Paths, command: SpoolCommand): void {
+  writeEntry(paths, SpoolCommandSchema.parse(command))
+}
+
+function writeEntry(paths: Paths, valid: SpoolItem | SpoolCommand): void {
   mkdirSync(paths.spool, { recursive: true })
   const time = String(Date.now()).padStart(TIME_DIGITS, '0')
   const counter = String(++written).padStart(COUNTER_DIGITS, '0')
@@ -53,25 +70,30 @@ export function spoolFiles(paths: Paths): string[] {
  * Takes in every waiting request, oldest first. A file goes only after `receive` returned: a crash in between delivers it
  * again, and the Engine stores a Trigger id once. A file that does not parse moves aside instead of blocking the rest.
  */
-export function drainSpool(paths: Paths, receive: (item: SpoolItem) => void): number {
+export function drainSpool(
+  paths: Paths,
+  receive: (item: SpoolItem) => void,
+  command: (command: SpoolCommand) => void = () => {},
+): number {
   let taken = 0
   for (const name of spoolFiles(paths)) {
     const file = join(paths.spool, name)
-    const item = parseItem(file)
-    if (!item) {
+    const entry = parseEntry(file)
+    if (!entry) {
       moveAside(paths, name)
       continue
     }
-    receive(item)
+    if ('command' in entry) command(entry)
+    else receive(entry)
     unlinkSync(file)
     taken++
   }
   return taken
 }
 
-function parseItem(file: string): SpoolItem | undefined {
+function parseEntry(file: string): SpoolItem | SpoolCommand | undefined {
   try {
-    return SpoolItemSchema.parse(JSON.parse(readFileSync(file, 'utf8')))
+    return z.union([SpoolItemSchema, SpoolCommandSchema]).parse(JSON.parse(readFileSync(file, 'utf8')))
   } catch {
     return undefined
   }
