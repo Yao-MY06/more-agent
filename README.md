@@ -200,6 +200,24 @@ curl -H "Authorization: Bearer <令牌>" \
 
 令牌会出现在终端历史和屏幕上；能读到它的人已经能直接操作状态目录。本机其他程序也能连这个端口，令牌能挡住不知道令牌的请求，但这不是安全沙箱。消息内容仍可能诱导 Leader，风险和 CLI 相同。
 
+## 桌面窗口
+
+第一版桌面窗口只在 Windows 上验证过，开发方式运行，不提供安装包、代码签名或自动更新。
+
+```bash
+npm ci --ignore-scripts
+npm install --prefix desktop
+npm run desktop
+```
+
+- `desktop/` 是独立的小包，Electron 固定在 `45.0.0`（精确版本），不会进入 resident 自身依赖。首次准备二进制约需 100 MB。
+- `npm run desktop` 会先构建 resident，再启动 Electron 窗口；窗口里就是本机网页面板。
+- 桌面壳用系统 Node 启动现有的 `lib/bin/resident.js web --port 0 --json`，面板服务失败时不会变成白屏，而会显示中文错误和建议。
+- 系统 Node 需要 24.13 或更新的 24.x；也可以用 `RESIDENT_NODE` 指向 `node.exe`。
+- 桌面壳默认继承 `RESIDENT_HOME`，所以和终端里的 runner 看同一份状态。它不会启动或停止 runner，也不会提供启动按钮。
+- 关闭窗口会让面板服务退出。Electron 主进程被杀时，stdin 管道关闭也会让面板服务退出。
+- 渲染进程启用 `sandbox`、`contextIsolation`，关闭 Node 集成；外链、新窗口、权限请求、下载、webview 和跳转到其他 origin 都会被拒绝。
+- 菜单已移除；第一版不做系统托盘、多窗口、开机启动和开发工具入口。
 ## 保证和限制
 
 - **不丢不重：** 请求 id 只存一次，决策和后续动作在同一事务里入队。`test/crash.test.ts` 真实 kill 两次 runner 来验证。

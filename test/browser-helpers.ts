@@ -1,14 +1,12 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { lock } from 'proper-lockfile'
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 export const BROWSER_PATH = existsSync(CHROME) ? CHROME : existsSync(EDGE) ? EDGE : undefined
-const BROWSER_LOCK_DIRECTORY = join(tmpdir(), 'resident-browser-tests')
 
 interface DevToolsTarget {
   type: string
@@ -45,19 +43,20 @@ async function openSocket(url: string): Promise<WebSocket> {
 }
 
 export class BrowserSession {
-  private readonly process: ChildProcess
-  private readonly profile: string
+  private readonly process?: ChildProcess
+  private readonly profile?: string
   private readonly socket: WebSocket
-  private readonly releaseLock: () => Promise<void>
+  private readonly ownsBrowser: boolean
   private readonly pending = new Map<number, PendingCall>()
   readonly errors: string[] = []
   private nextId = 1
+  private closed = false
 
-  constructor(process: ChildProcess, profile: string, socket: WebSocket, releaseLock: () => Promise<void>) {
+  constructor(process: ChildProcess | undefined, profile: string | undefined, socket: WebSocket, ownsBrowser = true) {
     this.process = process
     this.profile = profile
+    this.ownsBrowser = ownsBrowser
     this.socket = socket
-    this.releaseLock = releaseLock
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(String(event.data)) as {
         id?: number
@@ -144,40 +143,38 @@ export class BrowserSession {
   }
 
   async close(): Promise<void> {
+    if (this.closed) return
+    this.closed = true
+    if (!this.ownsBrowser) {
+      this.socket.close()
+      return
+    }
     try {
-      await this.send('Browser.close')
-    } catch {}
-    await new Promise<void>((resolve) => {
-      if (this.process.exitCode !== null) return resolve()
-      const timeout = setTimeout(() => {
-        this.process.kill()
-        resolve()
-      }, 3000)
-      this.process.once('exit', () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-    })
-    this.socket.close()
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        rmSync(this.profile, { recursive: true, force: true })
-        break
-      } catch {
-        await sleep(200)
+      await Promise.race([this.send('Browser.close').catch(() => undefined), sleep(1000)])
+      if (this.process?.exitCode === null) this.process.kill()
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          if (!this.process || this.process.exitCode !== null) return resolve()
+          this.process.once('exit', () => resolve())
+        }),
+        sleep(3000),
+      ])
+    } finally {
+      this.socket.close()
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          if (this.profile) rmSync(this.profile, { recursive: true, force: true })
+          break
+        } catch {
+          await sleep(200)
+        }
       }
     }
-    await this.releaseLock()
   }
 }
 
 export async function launchBrowser(url: string): Promise<BrowserSession> {
   if (!BROWSER_PATH) throw new Error('No Chromium browser is available')
-  mkdirSync(BROWSER_LOCK_DIRECTORY, { recursive: true })
-  const releaseLock = await lock(BROWSER_LOCK_DIRECTORY, {
-    stale: 120_000,
-    retries: { retries: 600, minTimeout: 100, maxTimeout: 100 },
-  })
   const profile = mkdtempSync(join(tmpdir(), 'resident-cdp-'))
   const chrome = spawn(
     BROWSER_PATH,
@@ -209,7 +206,7 @@ export async function launchBrowser(url: string): Promise<BrowserSession> {
     const page = targets.find((target) => target.type === 'page')
     if (!page) throw new Error('Chrome did not expose a page target')
     const socket = await openSocket(page.webSocketDebuggerUrl)
-    const session = new BrowserSession(chrome, profile, socket, releaseLock)
+    const session = new BrowserSession(chrome, profile, socket)
     await session.send('Runtime.enable')
     await session.send('Page.enable')
     await session.send('Log.enable')
@@ -223,7 +220,28 @@ export async function launchBrowser(url: string): Promise<BrowserSession> {
         rmSync(profile, { recursive: true, force: true })
       } catch {}
     }, 500)
-    await releaseLock()
     throw error
   }
+}
+
+export async function connectBrowser(port: number, timeoutMs = 10_000): Promise<BrowserSession> {
+  const started = Date.now()
+  let page: DevToolsTarget | undefined
+  while (!page) {
+    if (Date.now() - started > timeoutMs) throw new Error('Timed out waiting for a DevTools page')
+    try {
+      const targets = (await fetch(`http://127.0.0.1:${port}/json/list`).then((response) =>
+        response.json(),
+      )) as DevToolsTarget[]
+      page = targets.find((target) => target.type === 'page')
+    } catch {
+      await sleep(100)
+    }
+  }
+  const socket = await openSocket(page.webSocketDebuggerUrl)
+  const session = new BrowserSession(undefined, undefined, socket, false)
+  await session.send('Runtime.enable')
+  await session.send('Page.enable')
+  await session.send('Log.enable')
+  return session
 }

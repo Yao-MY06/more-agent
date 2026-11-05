@@ -33,7 +33,7 @@ const USAGE = `用法：resident <命令>
   tickets [--json]                         查看工单
   stop <工单 id 前缀> [--reason 原因]      停止工单，连同它的经理和工人
   replay <文件.jsonl>                      回放历史请求，每行 {id, text, thread?, expected?}
-  web [--port 端口]                        启动只监听本机的网页面板
+  web [--port 端口] [--json]               启动只监听本机的网页面板；--json 仅供桌面壳读取链接
   run [--until-idle]                       运行
   status [--json]                          查看状态
   decisions                                以 JSON 列出全部决策
@@ -144,51 +144,70 @@ function replay(args: string[], paths: Paths, io: Io): number {
 
 const MAX_PORT = 65_535
 
-function parseWebPort(args: string[], io: Io): number | undefined {
+interface WebOptions {
+  port: number
+  json: boolean
+}
+
+function parseWebOptions(args: string[], io: Io): WebOptions | undefined {
   try {
-    const { values } = parseArgs({ args, options: { port: { type: 'string' } } })
+    const { values } = parseArgs({ args, options: { port: { type: 'string' }, json: { type: 'boolean' } } })
     const raw = values.port ?? String(DEFAULT_PORT)
     if (!/^\d+$/.test(raw) || Number(raw) > MAX_PORT) throw new Error('invalid port')
-    return Number(raw)
+    return { port: Number(raw), json: !!values.json }
   } catch {
     io.err('端口必须是 0 到 65535 之间的整数')
     return undefined
   }
 }
 
-function waitForShutdown(): Promise<void> {
+/** JSON mode also watches stdin, so a dead desktop parent can never leave the panel behind. */
+function waitForShutdown(watchStdin = false): Promise<void> {
   return new Promise((resolve) => {
+    let settled = false
     const done = () => {
+      if (settled) return
+      settled = true
       process.off('SIGINT', done)
       process.off('SIGTERM', done)
+      process.stdin.off('end', done)
+      process.stdin.off('close', done)
+      if (watchStdin) process.stdin.pause()
       resolve()
     }
     process.once('SIGINT', done)
     process.once('SIGTERM', done)
+    if (watchStdin) {
+      process.stdin.once('end', done)
+      process.stdin.once('close', done)
+      process.stdin.resume()
+    }
   })
 }
 
 async function web(args: string[], paths: Paths, io: Io): Promise<number> {
-  const port = parseWebPort(args, io)
-  if (port === undefined) return 1
+  const options = parseWebOptions(args, io)
+  if (!options) return 1
   let server: Awaited<ReturnType<typeof startWebServer>>
   try {
-    server = await startWebServer({ paths, port })
+    server = await startWebServer({ paths, port: options.port })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error
-    io.err(`端口 ${port} 已被占用，请用 --port 换一个端口`)
+    io.err(`端口 ${options.port} 已被占用，请用 --port 换一个端口`)
     return 1
   }
-  io.out(`网页面板：${server.url}`)
-  io.out('这个链接等于操作权限，不要发给别人。按 Ctrl+C 停止。')
+  if (options.json) io.out(JSON.stringify({ url: server.url }))
+  else {
+    io.out(`网页面板：${server.url}`)
+    io.out('这个链接等于操作权限，不要发给别人。按 Ctrl+C 停止。')
+  }
   try {
-    await waitForShutdown()
+    await waitForShutdown(options.json)
     return 0
   } finally {
     await server.close()
   }
 }
-
 async function run(args: string[], paths: Paths, io: Io): Promise<number> {
   const { values } = parseArgs({ args, options: { 'until-idle': { type: 'boolean' } } })
   const llm = new ClaudeCli(leaderSettings(), paths.leaderCwd)

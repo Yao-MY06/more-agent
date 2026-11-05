@@ -16,7 +16,8 @@
     "lint": "biome check .",
     "check": "npm run lint && npm run typecheck && npm test",
     "eval:memory": "npm run build && node --disable-warning=ExperimentalWarning lib/eval/memory-eval.js",
-    "resident": "node --disable-warning=ExperimentalWarning lib/bin/resident.js"
+    "resident": "node --disable-warning=ExperimentalWarning lib/bin/resident.js",
+    "desktop": "npm run build && npm --prefix desktop start"
   },
   "dependencies": {
     "proper-lockfile": "4.1.2",
