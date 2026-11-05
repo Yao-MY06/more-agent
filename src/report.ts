@@ -1,11 +1,11 @@
 /** Read-only views of what the Leader decided, for a person to check. They never need the runner's lock. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import { storeReads } from '../vendor/dsh-superagent/src/app/store-read.ts'
 import { type Decision, reasonText, type Trigger } from '../vendor/dsh-superagent/src/core/index.ts'
-import type { Paths } from './config.ts'
+import { openReadOnly, type Paths } from './config.ts'
 import type { LlmUsage } from './llm/llm.ts'
 
 const MAX_DECISIONS = 10_000
@@ -84,7 +84,7 @@ export interface Status {
 
 function withDatabase<T>(paths: Paths, empty: T, read: (db: DatabaseSync) => T): T {
   if (!existsSync(paths.db)) return empty
-  const db = new DatabaseSync(paths.db, { readOnly: true })
+  const db = openReadOnly(paths.db)
   try {
     return read(db)
   } finally {

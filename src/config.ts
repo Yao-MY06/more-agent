@@ -2,7 +2,10 @@
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
+
+const READ_BUSY_TIMEOUT_MS = 10_000
 
 /** Upstream's Eval window limits: enough to route on, small enough that one card stays cheap. */
 export const TRIGGER_CHARS = 4000
@@ -80,6 +83,11 @@ export interface Paths {
   jobs: string
   /** One Markdown file per day, the only place memory lives. */
   memory: string
+}
+
+/** For commands that only look. A runner may hold the file for a moment, and the first reader after a kill recovers its log. */
+export function openReadOnly(file: string): DatabaseSync {
+  return new DatabaseSync(file, { readOnly: true, timeout: READ_BUSY_TIMEOUT_MS })
 }
 
 export function pathsFor(home = process.env.RESIDENT_HOME ?? join(homedir(), '.more-agent')): Paths {

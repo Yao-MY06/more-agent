@@ -42,6 +42,9 @@ export { SCHEMA_VERSION }
  * The Runtime opens it after locking the state directory.
  * The Engine mutates domain aggregates inside `atomic` transactions while Sources, views, and the Outbox read state or update their own records.
  */
+/** SQLite fails at once on a lock by default, and recovering the log after a kill locks the file for a moment. */
+const BUSY_TIMEOUT_MS = 10_000
+
 export class Store implements Repositories {
   readonly db: DatabaseSync
   /**
@@ -51,7 +54,7 @@ export class Store implements Repositories {
    */
   constructor(path: string, private readonly report: (error: unknown) => void = () => {}) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-    this.db = new DatabaseSync(path)
+    this.db = new DatabaseSync(path, { timeout: BUSY_TIMEOUT_MS })
     this.read = storeReads(this.db)
     try {
       chmodSync(path, 0o600)

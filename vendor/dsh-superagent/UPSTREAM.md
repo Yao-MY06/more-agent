@@ -8,6 +8,7 @@
 
 | 文件 | 改了什么 | 原因 |
 |---|---|---|
+| `src/app/store.ts` | 打开数据库时等 10 秒锁，否则只读命令或崩溃恢复会让 runner 启动失败 | 上游只有一个进程碰数据库，这里还有只读命令 |
 | `src/app/store.ts` | 去掉设置历史和数据库迁移，schema 从 1 开始 | 这两块依赖上游的 `policy.ts`，而它连着整个 DSH 和 GitHub Source |
 | `src/kv.ts` | 只保留 Store 和 Runtime 的键 | 其余键属于已去掉的设置、提示词和 Source |
 | `src/sources/host.ts` | 只保留 `Health` 类型 | `infra/health.ts` 只用到这个类型 |

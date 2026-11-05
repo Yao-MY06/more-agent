@@ -1,8 +1,8 @@
 /** A read-only view of the Tickets, for a person checking on work. It never needs the runner's lock. */
 import { existsSync } from 'node:fs'
-import { DatabaseSync } from 'node:sqlite'
+import type { DatabaseSync } from 'node:sqlite'
 import { type Decision, type Ticket, ticketStage } from '../vendor/dsh-superagent/src/core/index.ts'
-import type { Paths } from './config.ts'
+import { openReadOnly, type Paths } from './config.ts'
 import { MANAGER_TICKET, type ManagerTicketState } from './manager/executor.ts'
 
 const STAGE_WORDS: Record<string, string> = { ended: '已结束', person: '等你', working: '进行中', idle: '等工人' }
@@ -46,7 +46,7 @@ function toRow(db: DatabaseSync, ticket: Ticket): TicketRow {
 /** Newest first. */
 export function readTickets(paths: Paths): TicketRow[] {
   if (!existsSync(paths.db)) return []
-  const db = new DatabaseSync(paths.db, { readOnly: true })
+  const db = openReadOnly(paths.db)
   try {
     return db
       .prepare('SELECT value FROM ticket ORDER BY rowid DESC LIMIT ?')
