@@ -114,21 +114,23 @@ describe('projects', () => {
   })
 })
 
+const verdictContext = { projectIds: ['alpha'], ticketIds: [], memoryIds: [], recallAllowed: false }
+
 describe('verdict', () => {
   it('when routing to a registered project, the verdict stands', () => {
-    expect(parseVerdict(verdict(), ['alpha']).project).toBe('alpha')
+    expect(parseVerdict(verdict(), verdictContext).project).toBe('alpha')
   })
   it('when routing to an unregistered project, it is refused', () => {
-    expect(() => parseVerdict(verdict({ project: 'ghost' }), ['alpha'])).toThrow('unregistered')
-    expect(() => parseVerdict(verdict({ project: null }), ['alpha'])).toThrow('unregistered')
+    expect(() => parseVerdict(verdict({ project: 'ghost' }), verdictContext)).toThrow('unregistered')
+    expect(() => parseVerdict(verdict({ project: null }), verdictContext)).toThrow('unregistered')
   })
   it('when clarifying without a question, it is refused', () => {
-    expect(() => parseVerdict(verdict({ action: 'clarify', project: null }), ['alpha'])).toThrow('question')
+    expect(() => parseVerdict(verdict({ action: 'clarify', project: null }), verdictContext)).toThrow('question')
   })
   it('when the answer breaks the schema, it is refused', () => {
-    expect(() => parseVerdict({ action: 'execute' }, ['alpha'])).toThrow()
-    expect(() => parseVerdict({ ...verdict(), extra: true }, ['alpha'])).toThrow()
-    expect(() => parseVerdict(verdict({ confidence: 2 }), ['alpha'])).toThrow()
+    expect(() => parseVerdict({ action: 'execute' }, verdictContext)).toThrow()
+    expect(() => parseVerdict({ ...verdict(), extra: true }, verdictContext)).toThrow()
+    expect(() => parseVerdict(verdict({ confidence: 2 }), verdictContext)).toThrow()
   })
   it('when routing, the outcome accepts and records the project', () => {
     expect(toOutcome(verdict(), usage)).toMatchObject({

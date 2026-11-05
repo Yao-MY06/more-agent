@@ -20,6 +20,7 @@ more-agent 的常驻层：用户只和一个 Leader 对话，由它判断每条�
 | `src/executor.ts`               | `Executor`              | 按项目开关分给影子运行或经理                     |
 | `src/shadow.ts`                 | 新增                    | 影子运行：工单只走流程，什么都不执行             |
 | `src/manager/`                  | 新增                    | 经理会话：按轮次运行，等工人时不花额度           |
+| `src/memory/`                   | 新增                    | 记忆：Markdown 文件加内存中的全文索引            |
 | `src/outbox.ts`、`src/inbox.ts` | `Outbox`                | 发给你的消息写进本地收件箱                       |
 | `src/spool.ts`                  | Source                  | 其他进程用文件提交请求和命令                     |
 | `src/runtime.ts`、`src/cli.ts`  | Runtime                 | 组装和命令行                                     |
@@ -38,6 +39,26 @@ more-agent 的常驻层：用户只和一个 Leader 对话，由它判断每条�
 **经理能做什么由命令行决定，不靠提示词：** 没有 Bash；只能编辑 `_tickets/` 下的文件；只能用 `omh` 的 MCP 工具（不含 `omh_wait`）；不加载用户级设置和其他 MCP 服务。
 
 启用前，项目里要先运行 `omh init`，并由你决定工人和同意项。这一步 resident 不会替你做。
+
+## 记忆怎么运行
+
+Leader 每次调用都是全新的，它知道的过去都来自卡片。卡片由程序现场拼出，不调用模型，也不保留任何会话。
+
+| 卡片上的内容 | 来源                                                | 上限                     |
+| ------------ | --------------------------------------------------- | ------------------------ |
+| `rules`      | 你要求记住的规则，不会随时间变淡                    | 最新 10 条，放不下会说明 |
+| `memory`     | 和这条请求相关的记录                                | 8 条，每条 600 字        |
+| `work`       | 进行中和最近结束的工单                              | 20 张进行中，15 张已结束 |
+| `recalled`   | Leader 用 `recall` 动作要来的内容，按词查或沿引用读 | 每条请求最多 2 次        |
+
+- **Markdown 是唯一的真实来源。** 记忆存在 `<状态目录>/memory/YYYY-MM-DD.md`，可以直接手改，索引每次在内存里重建。
+- **写进记忆的：** 你的消息、经理的汇报和问答。工人的输出和网页内容不进记忆。影子项目也记。
+- **排序：** BM25 乘 30 天半衰期，规则不衰减，再用 MMR 压低几乎相同的记录。中文按两字一组切分。
+- **作用范围：** 每条记录属于一个项目或全局。经理只看到自己项目和全局的记录，这由代码保证。Leader 看得到所有项目，不外溢靠提示词和评测，不是硬保证。
+- **旧事实：** 新记录可以取代旧记录，被取代或忘记的不再出现，但原文还留在文件里。
+- **Leader 的动作多了四个：** `answer`（直接回答）、`attach`（接到旧工单）、`remember`（记下规则）、`recall`（查记忆）。它仍然没有任何工具，`recall` 也只是回答里的一个字段，由程序执行。
+
+**评测：** `npm run eval:memory -- <输出目录> [--noise 300]`，用真实模型跑，会花钱。题目是这个项目自己写的，只能说明这些题，不能和公开榜单比较。
 
 ## 使用
 
@@ -74,6 +95,8 @@ npm run resident -- say "用第一种做法" --thread add
 | `project list`                                       | 列出项目，每行是 `id`、`执行` 或 `影子`、路径                                                                             |
 | `say <文本> [--thread 话题]`                         | 提交请求，输出请求 id。在同一话题上继续说，消息会直接到负责的经理，不再经过 Leader 判断。不需要 runner 在运行             |
 | `inbox [--all] [--json]`                             | 查看 Leader 发给你的新消息，读过就不再显示；`--all` 显示全部                                                              |
+| `remember <文本> [--project 项目] [--supersedes id]` | 记下一条规则，之后派的工作都会带上。也可以直接 `say "记住：……"`，由 Leader 判断范围。不需要 runner 在运行                 |
+| `memory list\|search <词>\|show <id>\|forget <id>`   | 查看或作废记忆，可加 `--project`、`--reason`、`--json`。不需要 runner 在运行                                              |
 | `tickets [--json]`                                   | 查看工单：阶段、项目、等你回答的问题、轮数和经理的牌价花费                                                                |
 | `stop <工单 id 前缀> [--reason 原因]`                | 停止工单，连同它的经理和这个项目正在跑的工人（包括审查），并把 `omh` 里对应的工单移到 `blocked`                           |
 | `replay <文件.jsonl>`                                | 回放历史请求，每行 `{id, text, thread?, expected?}`。有一行不合法就整个文件都不提交；相同 id 重放不会重复判断             |
@@ -93,6 +116,7 @@ npm run resident -- say "用第一种做法" --thread add
 | `RESIDENT_LEADER_MODEL`            | `claude-opus-5-5`                                | Leader 模型                                   |
 | `RESIDENT_LEADER_EFFORT`           | `medium`                                         | Leader 强度                                   |
 | `RESIDENT_LEADER_COMMAND`          | `["claude"]`                                     | 替换 `claude` 的命令，JSON 数组，用于测试     |
+| `RESIDENT_MEMORY`                  | 开                                               | `off` 时卡片上没有任何记忆，用来测量基线      |
 | `RESIDENT_MANAGER_MODEL`           | `claude-opus-5-5`                                | 经理模型                                      |
 | `RESIDENT_MANAGER_EFFORT`          | `medium`                                         | 经理强度                                      |
 | `RESIDENT_MANAGER_TURN_BUDGET_USD` | `3`                                              | 单轮牌价上限                                  |
@@ -118,6 +142,9 @@ npm run resident -- say "用第一种做法" --thread add
 - **Windows 上没有文件权限位保护：** 状态目录靠用户目录的 ACL 保护。
 - **`node:sqlite` 在 Node 24 仍标记为实验性：** 上游和 OpenClaw 都在用，`npm run resident` 关闭了这条警告。升级 Node 时要回归测试。
 - **电脑休眠或关机时不工作。**
+- **记忆只有全文检索，没有向量：** 换一种说法、没有共同字词时找不到。评测里单一事实在 3000 条干扰下仍排第一，需要跨几次对话拼起来的问题在约 1000 条后开始漏，要等 M4 的整理。
+- **工人能改记忆文件：** 工人以你的系统用户运行，能写状态目录。`origin` 字段防的是模型误写，防不住恶意工人。
+- **规则太多会放不下：** 超出上限时卡片只说明少了几条。经理会在汇报里告诉你，Leader 能按词查。
 
 ## 开发
 

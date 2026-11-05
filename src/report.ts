@@ -9,6 +9,7 @@ import type { Paths } from './config.ts'
 import type { LlmUsage } from './llm/llm.ts'
 
 const MAX_DECISIONS = 10_000
+const NOT_A_PROJECT = ['attach', 'answer', 'remember', 'clarify', 'ignore', 'unavailable']
 const PERCENT = 100
 const MS_PER_SECOND = 1000
 const TEXT_PREVIEW_CHARS = 48
@@ -38,6 +39,8 @@ export interface DecisionRow {
   text: string
   /** The project it would go to, or `clarify`, `ignore` or `unavailable`. */
   outcome: string
+  /** What the Ticket was accepted to do, which is what a manager is told. */
+  scope?: string
   expected?: string
   matchesExpected?: boolean
   confidence?: number
@@ -51,6 +54,9 @@ export interface DecisionRow {
 export interface Summary {
   decisions: number
   routed: number
+  attached: number
+  answered: number
+  remembered: number
   clarified: number
   ignored: number
   unavailable: number
@@ -105,8 +111,7 @@ export function loadReviews(paths: Paths): Map<string, Review> {
 export function outcomeOf(decision: Pick<Decision, 'kind' | 'audit'>): string {
   const audit = decision.audit as Audit | undefined
   if (decision.kind === 'accept') return audit?.project ?? 'accept'
-  if (decision.kind === 'ignore' && audit?.action === 'clarify') return 'clarify'
-  return decision.kind
+  return decision.kind === 'ignore' && audit?.action ? audit.action : decision.kind
 }
 
 function triggerOf(db: DatabaseSync, id: string): Trigger | undefined {
@@ -134,6 +139,7 @@ function toRow(db: DatabaseSync, decision: Decision, id: string, reviews: Map<st
     text: trigger?.text ?? '',
     outcome,
     reason: reasonText(decision.reason),
+    ...(decision.mandate ? { scope: decision.mandate.scope } : {}),
     ...(expected ? { expected, matchesExpected: outcome === expected } : {}),
     ...(audit?.confidence === undefined ? {} : { confidence: audit.confidence }),
     ...(audit?.question ? { question: audit.question } : {}),
@@ -161,12 +167,15 @@ function directCount(paths: Paths): number {
 }
 
 export function summarize(rows: readonly DecisionRow[], direct: number): Summary {
-  const isProject = (row: DecisionRow) => !['clarify', 'ignore', 'unavailable'].includes(row.outcome)
+  const isProject = (row: DecisionRow) => !NOT_A_PROJECT.includes(row.outcome)
   const used = rows.flatMap((row) => (row.usage ? [row.usage] : []))
   const total = (read: (usage: LlmUsage) => number) => used.reduce((sum, usage) => sum + read(usage), 0)
   return {
     decisions: rows.length,
     routed: rows.filter(isProject).length,
+    attached: rows.filter((row) => row.outcome === 'attach').length,
+    answered: rows.filter((row) => row.outcome === 'answer').length,
+    remembered: rows.filter((row) => row.outcome === 'remember').length,
     clarified: rows.filter((row) => row.outcome === 'clarify').length,
     ignored: rows.filter((row) => row.outcome === 'ignore').length,
     unavailable: rows.filter((row) => row.outcome === 'unavailable').length,
@@ -220,7 +229,7 @@ export function renderReport({ rows, summary }: { rows: readonly DecisionRow[]; 
   const matchRate = summary.withExpected ? Math.round((summary.matched / summary.withExpected) * PERCENT) : 0
   const unreviewed = summary.decisions - summary.reviewedOk - summary.reviewedWrong
   return [
-    `决策 ${summary.decisions} 条：路由 ${summary.routed}，澄清 ${summary.clarified}，忽略 ${summary.ignored}，不可用 ${summary.unavailable}`,
+    `决策 ${summary.decisions} 条：路由 ${summary.routed}，接旧单 ${summary.attached}，回答 ${summary.answered}，记住 ${summary.remembered}，澄清 ${summary.clarified}，忽略 ${summary.ignored}，不可用 ${summary.unavailable}`,
     `预期命中 ${summary.matched}/${summary.withExpected}（${matchRate}%）`,
     `人工核对：对 ${summary.reviewedOk}，错 ${summary.reviewedWrong}，未核对 ${unreviewed}`,
     `后续消息直达 ${summary.direct} 条（未调用 Leader）`,

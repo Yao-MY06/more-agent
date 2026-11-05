@@ -4,7 +4,7 @@ import { lock } from 'proper-lockfile'
 import { Effects } from '../vendor/dsh-superagent/src/app/effects.ts'
 import { Passes } from '../vendor/dsh-superagent/src/app/passes.ts'
 import { Store } from '../vendor/dsh-superagent/src/app/store.ts'
-import { Engine, key, UserError } from '../vendor/dsh-superagent/src/core/index.ts'
+import { Engine, key, type Ticket, UserError } from '../vendor/dsh-superagent/src/core/index.ts'
 import { HealthBoard } from '../vendor/dsh-superagent/src/infra/health.ts'
 import { monotonicClock } from './clock.ts'
 import {
@@ -20,16 +20,25 @@ import {
 } from './config.ts'
 import { TicketExecutor } from './executor.ts'
 import { appendInbox } from './inbox.ts'
-import { LeaderAssessor } from './leader/assessor.ts'
+import { LeaderAssessor, type LeaderHost } from './leader/assessor.ts'
+import { buildContext, memoryCard } from './leader/context.ts'
 import { LeaderReporter } from './leader/reporter.ts'
 import type { Llm } from './llm/llm.ts'
 import { ManagerExecutor } from './manager/executor.ts'
+import { GLOBAL_SCOPE, MemoryRecorder, messageMemoryId, projectScope } from './memory/recorder.ts'
+import { readRef } from './memory/refs.ts'
+import { MemoryStore } from './memory/store.ts'
 import { LocalOutbox } from './outbox.ts'
 import { localPolicy, localScope } from './policy.ts'
 import { loadProjects, type Project } from './projects.ts'
 import { ShadowSteps } from './shadow.ts'
 import { drainSpool, spoolFiles, toTrigger } from './spool.ts'
-import { ticketExecutes } from './ticket-project.ts'
+import { projectOfTicket, ticketExecutes } from './ticket-project.ts'
+
+/** Deeper than the card, or a recall by the same words would find what the Leader already saw. */
+const RECALL_SEARCH_LIMIT = 20
+const MANAGER_RULES = 20
+const MANAGER_MATCHES = 5
 
 export interface RuntimeOptions {
   paths: Paths
@@ -39,6 +48,8 @@ export interface RuntimeOptions {
   manager?: ManagerSettings
   /** A problem in the background that no request is waiting on, such as a broken manager setup. */
   onError?: (error: unknown) => void
+  /** False for measuring what memory is worth. Writing goes on either way; only reading stops. */
+  memoryEnabled?: boolean
 }
 
 export class Runtime {
@@ -48,6 +59,9 @@ export class Runtime {
   private readonly effects: Effects
   private readonly passes: Passes
   private readonly manager: ManagerExecutor
+  private readonly memory: MemoryStore
+  private readonly recorder: MemoryRecorder
+  private readonly memoryEnabled: boolean
   private readonly lifetime = new AbortController()
   private readonly onError: RuntimeOptions['onError']
   private closing = false
@@ -59,6 +73,9 @@ export class Runtime {
     const board = new HealthBoard()
     this.effects = new Effects(this.store, board)
     this.onError = options.onError
+    this.memory = new MemoryStore(options.paths.memory)
+    this.recorder = new MemoryRecorder({ effects: this.effects, memory: this.memory })
+    this.memoryEnabled = options.memoryEnabled ?? process.env.RESIDENT_MEMORY !== 'off'
     const projects = () => loadProjects(options.paths.projects)
     const executes = (ticketId: string) =>
       ticketExecutes(ticketId, this.store.tickets, this.store.decisions, projects())
@@ -71,11 +88,7 @@ export class Runtime {
       llm: options.llm,
       lifetime: this.lifetime.signal,
     }
-    const assessor = new LeaderAssessor({
-      ...leader,
-      projects,
-      history: (candidate) => this.store.read.threadTriggers(candidate.thread.key, THREAD_WINDOW_MESSAGES),
-    })
+    const assessor = this.createAssessor(leader, projects)
     this.manager = this.createManager(options, projects, outbox, new LeaderReporter(leader))
     const shadow = new ShadowSteps(leader)
     const executor = new TicketExecutor({
@@ -91,6 +104,9 @@ export class Runtime {
       executor,
       outbox,
       now: monotonicClock(),
+      emit: (event) => {
+        if (event.type === 'trigger.received') this.recordFollowup(event.data.triggerId)
+      },
     })
     this.passes = new Passes({
       engine: this.engine,
@@ -100,6 +116,56 @@ export class Runtime {
       configured: () => true,
       closing: () => this.closing,
     })
+  }
+
+  private createAssessor(
+    leader: Pick<LeaderHost, 'engine' | 'effects' | 'store' | 'outbox' | 'llm' | 'lifetime'>,
+    projects: () => Project[],
+  ): LeaderAssessor {
+    const contextHost = { store: this.store, memory: this.memory, enabled: this.memoryEnabled }
+    return new LeaderAssessor({
+      ...leader,
+      projects,
+      recorder: this.recorder,
+      history: (candidate) => this.store.read.threadTriggers(candidate.thread.key, THREAD_WINDOW_MESSAGES),
+      context: (candidate, recalled, allowed) => buildContext(contextHost, candidate, recalled, allowed),
+      recall: (query, refs) => this.recall(query, refs),
+    })
+  }
+
+  /** Only a message that reached a Ticket: any other waits for the Leader, whose judgement says where it belongs. */
+  private recordFollowup(triggerId: string): void {
+    const trigger = this.store.triggers.get(triggerId)
+    const ticketId = this.store.triggers.disposition(triggerId)?.fanout[0]
+    if (!trigger || !ticketId) return
+    this.recorder.message(trigger, this.scopeOfTicket(ticketId), { ticketId })
+  }
+
+  private scopeOfTicket(ticketId: string): string {
+    const ticket = this.store.tickets.get(ticketId)
+    const project = ticket && projectOfTicket(ticket, this.store.decisions, loadProjects(this.paths.projects))
+    return project ? projectScope(project.id) : GLOBAL_SCOPE
+  }
+
+  private recall(query: string | null, refs: readonly string[]): object[] {
+    if (!this.memoryEnabled) return []
+    const host = { store: this.store, memory: this.memory }
+    const found = query ? this.memory.search(query, { limit: RECALL_SEARCH_LIMIT }).map(memoryCard) : []
+    return [...found, ...refs.map((ref) => readRef(host, ref))]
+  }
+
+  /** The rules of this project and everywhere; other projects' records never reach it. */
+  private managerMemories(ticket: Ticket, projectId: string, searched: boolean): object[] {
+    if (!this.memoryEnabled) return []
+    const scopes = [GLOBAL_SCOPE, projectScope(projectId)]
+    const inForce = this.memory.pinned(scopes)
+    const rules = inForce.slice(0, MANAGER_RULES)
+    const shown = new Set([...rules.map((rule) => rule.id), ...ticket.origin.triggerIds.map(messageMemoryId)])
+    const text = ticket.origin.triggerIds.map((id) => this.store.triggers.get(id)?.text ?? '').join('\n')
+    const matches = searched ? this.memory.search(text, { scopes, limit: MANAGER_MATCHES + shown.size }) : []
+    const cards = [...rules, ...matches.filter((hit) => !shown.has(hit.id)).slice(0, MANAGER_MATCHES)].map(memoryCard)
+    const omitted = inForce.length - rules.length
+    return omitted ? [...cards, { rules_not_shown: omitted }] : cards
   }
 
   private createOutbox(executes: (ticketId: string) => boolean): LocalOutbox {
@@ -124,7 +190,12 @@ export class Runtime {
       settings: options.manager ?? managerSettings(),
       paths: options.paths,
       projects,
-      relay: (request) => reporter.request(request),
+      relay: (request) => {
+        reporter.request(request)
+        const ticket = this.store.tickets.get(request.ticketId)
+        if (ticket) this.recorder.report(ticket, this.scopeOfTicket(ticket.id), request)
+      },
+      memories: (ticket, projectId, searched) => this.managerMemories(ticket, projectId, searched),
       redeliver: (ticketId) => this.effects.enqueue('delivery', ticketId, { ticketId }),
       notice: (ticketId, text) => {
         const channel = this.store.tickets.get(ticketId)?.channels[0]
@@ -221,6 +292,7 @@ export class Runtime {
     await this.passes.stop()
     await this.effects.drain()
     await this.manager.drain()
+    this.memory.close()
     this.store.close()
   }
 }

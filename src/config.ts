@@ -78,6 +78,8 @@ export interface Paths {
   /** An empty directory, so a Leader call picks up no project's instructions. */
   leaderCwd: string
   jobs: string
+  /** One Markdown file per day, the only place memory lives. */
+  memory: string
 }
 
 export function pathsFor(home = process.env.RESIDENT_HOME ?? join(homedir(), '.more-agent')): Paths {
@@ -93,6 +95,7 @@ export function pathsFor(home = process.env.RESIDENT_HOME ?? join(homedir(), '.m
     lock: join(home, 'resident.lock'),
     leaderCwd: join(home, 'leader-cwd'),
     jobs: join(home, 'jobs'),
+    memory: join(home, 'memory'),
   }
 }
 

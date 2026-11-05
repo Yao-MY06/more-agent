@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { leaderSettings, MAX_TEXT_CHARS, type Paths, pathsFor } from './config.ts'
 import { readInbox, takeUnread } from './inbox.ts'
 import { ClaudeCli } from './llm/claude-cli.ts'
+import { GLOBAL_SCOPE, projectScope } from './memory/recorder.ts'
+import { type MemoryEntry, MemoryStore } from './memory/store.ts'
 import { addProject, loadProjects } from './projects.ts'
 import { appendReview, decisionRows, readStatus, readSummary, renderReport, triggerExists } from './report.ts'
 import { Runtime } from './runtime.ts'
@@ -13,6 +15,8 @@ import { spoolFiles, writeSpool, writeSpoolCommand } from './spool.ts'
 import { readTickets, renderTicket, resolveTicketId } from './tickets-view.ts'
 
 const TICKET_ID_CHARS = 12
+const MEMORY_PREVIEW_CHARS = 120
+const MEMORY_SEARCH_LIMIT = 20
 
 const USAGE = `用法：resident <命令>
 
@@ -21,6 +25,10 @@ const USAGE = `用法：resident <命令>
   project list                             列出项目
   say <文本> [--thread 话题]               提交一条请求，或在某个话题上继续说
   inbox [--all] [--json]                   查看 Leader 发给你的新消息
+  remember <文本> [--project 项目] [--supersedes 记忆 id]
+                                           记下一条规则，之后的工作都会带上
+  memory list|search <词>|show <id>|forget <id> [--project 项目] [--reason 原因] [--json]
+                                           查看或作废记忆
   tickets [--json]                         查看工单
   stop <工单 id 前缀> [--reason 原因]      停止工单，连同它的经理和工人
   replay <文件.jsonl>                      回放历史请求，每行 {id, text, thread?, expected?}
@@ -30,7 +38,7 @@ const USAGE = `用法：resident <命令>
   report [--json]                          决策报告
   review <触发器 id> ok|wrong [--note 备注] 人工核对一条决策
 
-环境变量：RESIDENT_HOME、RESIDENT_LEADER_MODEL、RESIDENT_LEADER_EFFORT`
+环境变量：RESIDENT_HOME、RESIDENT_LEADER_MODEL、RESIDENT_LEADER_EFFORT、RESIDENT_MEMORY`
 
 const ReplayLineSchema = z
   .object({
@@ -181,6 +189,90 @@ function stop(args: string[], paths: Paths, io: Io): number {
   return 0
 }
 
+function remember(args: string[], paths: Paths, io: Io): number {
+  const { values, positionals } = parseArgs({
+    args,
+    options: { project: { type: 'string' }, supersedes: { type: 'string' } },
+    allowPositionals: true,
+  })
+  const text = positionals.join(' ')
+  if (!text) return usageError(io)
+  const { project: projectId, supersedes } = values
+  if (projectId && !loadProjects(paths.projects).some((item) => item.id === projectId)) {
+    io.err(`没有登记这个项目：${projectId}`)
+    return 1
+  }
+  const memory = new MemoryStore(paths.memory)
+  if (supersedes && !memory.get(supersedes)) {
+    io.err(`没有这条记忆：${supersedes}`)
+    return 1
+  }
+  const id = `remember-${randomUUID()}`
+  const scope = projectId ? projectScope(projectId) : GLOBAL_SCOPE
+  const replaces = supersedes ? { supersedes } : {}
+  memory.record({ id, at: new Date().toISOString(), origin: 'human', scope, pinned: true, body: text, ...replaces })
+  memory.close()
+  io.out(id)
+  return 0
+}
+
+function renderMemory(entry: MemoryEntry): string {
+  const pinned = entry.pinned ? ' 规则' : ''
+  return `${entry.id}  ${entry.at}  ${entry.scope}  ${entry.origin}${pinned}\n    ${entry.body.replace(/\s+/g, ' ').slice(0, MEMORY_PREVIEW_CHARS)}`
+}
+
+function printMemories(entries: readonly MemoryEntry[], json: boolean | undefined, io: Io): number {
+  if (json) io.out(toJson(entries))
+  else if (!entries.length) io.out('没有记录')
+  else for (const entry of entries) io.out(renderMemory(entry))
+  return 0
+}
+
+function memoryCommand(args: string[], paths: Paths, io: Io): number {
+  const { values, positionals } = parseArgs({
+    args,
+    options: { project: { type: 'string' }, reason: { type: 'string' }, json: { type: 'boolean' } },
+    allowPositionals: true,
+  })
+  const [action, ...rest] = positionals
+  const memory = new MemoryStore(paths.memory)
+  const scopes = values.project ? [GLOBAL_SCOPE, projectScope(values.project)] : undefined
+  try {
+    if (action === 'list') return printMemories(memory.list(), values.json, io)
+    if (action === 'search' && rest.length) {
+      const options = { limit: MEMORY_SEARCH_LIMIT, ...(scopes ? { scopes } : {}) }
+      return printMemories(memory.search(rest.join(' '), options), values.json, io)
+    }
+    const [id] = rest
+    if (!id) return usageError(io)
+    if (action === 'show') return showMemory(memory, id, io)
+    if (action === 'forget') return forgetMemory(memory, id, values.reason, io)
+    return usageError(io)
+  } finally {
+    memory.close()
+  }
+}
+
+function showMemory(memory: MemoryStore, id: string, io: Io): number {
+  const entry = memory.get(id)
+  if (!entry) {
+    io.err(`没有这条记忆：${id}`)
+    return 1
+  }
+  io.out(toJson(entry))
+  return 0
+}
+
+function forgetMemory(memory: MemoryStore, id: string, reason: string | undefined, io: Io): number {
+  if (!memory.get(id)) {
+    io.err(`没有这条记忆：${id}`)
+    return 1
+  }
+  memory.forget(id, reason ?? '用户要求忘记', new Date().toISOString())
+  io.out(`已作废 ${id}，原文仍留在记忆文件里`)
+  return 0
+}
+
 function decisions(_args: string[], paths: Paths, io: Io): number {
   io.out(toJson(decisionRows(paths)))
   return 0
@@ -211,6 +303,8 @@ const COMMANDS: Record<string, Command> = {
   project,
   inbox,
   say,
+  remember,
+  memory: memoryCommand,
   tickets,
   stop,
   replay,

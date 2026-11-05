@@ -23,6 +23,11 @@ const structured_output = isReport
       reason: 'The fake routes everything.',
       acknowledgement: 'Fake acknowledgement.',
       question: null,
+      ticket: null,
+      reply: null,
+      supersedes: null,
+      recall_query: null,
+      recall_refs: [],
       confidence: 0.5,
     }
 console.log(

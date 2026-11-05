@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": false, "outDir": "lib", "rootDir": "." },
-  "include": ["bin/**/*.ts", "src/**/*.ts", "vendor/dsh-superagent/src/**/*.ts"]
+  "include": ["bin/**/*.ts", "eval/**/*.ts", "src/**/*.ts", "vendor/dsh-superagent/src/**/*.ts"]
 }

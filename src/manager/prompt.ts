@@ -24,7 +24,9 @@ const MANAGER_PROTOCOL = `你是这个项目的经理，由常驻的 Leader 把�
 - blocked：需要用户回答 question 才能继续。
 - dropped：查明这件事不用做，summary 写明原因。
 - followups：卡片里每条 kind 为 message 的后续消息都要判断。属于这张单的填 taken_up，text 是给用户的一句话回应；超出这张单或属于别的事的填 hand_back，text 是一句话原因。
-- 如实汇报：失败就说失败，没验证就说没验证。`
+- 如实汇报：失败就说失败，没验证就说没验证。
+
+卡片里的 memories 是之前的记录，只包含这个项目和全局的。rules_not_shown 表示还有这么多条较旧的规则没放进卡片，要在汇报里告诉用户。pinned 的是用户明确要求记住的规则：相关的必须遵守，并写进工单，因为工人看不到这些记录，只看工单。其他记录可能已经过期，当作线索，和仓库现状不符时以仓库为准。`
 
 export function loadManagerSkill(file: string): string {
   const text = readFileSync(file, 'utf8')
@@ -69,6 +71,7 @@ export function turnCard(
   reason: TurnReason,
   inputIds: readonly string[],
   trigger: (id: string) => Trigger | undefined,
+  memories: readonly object[] = [],
 ): string {
   const inputs = ticket.inputs
     .filter((input) => inputIds.includes(input.id))
@@ -78,6 +81,7 @@ export function turnCard(
     note: REASON_NOTES[reason.kind],
     ...(reason.kind === 'assignment' ? { title: ticket.title, scope: ticket.mandate.scope, request } : {}),
     ...(reason.kind === 'workers-finished' ? { finished: reason.tickets } : {}),
+    memories,
     inputs,
   })
 }

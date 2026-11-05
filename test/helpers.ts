@@ -35,7 +35,12 @@ export function verdict(overrides: Partial<Verdict> = {}): Verdict {
     scope: 'The request',
     reason: 'A reason',
     acknowledgement: 'On it.',
+    ticket: null,
     question: null,
+    reply: null,
+    supersedes: null,
+    recall_query: null,
+    recall_refs: [],
     confidence: 0.9,
     ...overrides,
   }

@@ -91,6 +91,8 @@ export interface ManagerHost {
   relay(request: RelayRequest): void
   /** Queues another delivery of the Ticket's waiting Inputs. */
   redeliver(ticketId: string): void
+  /** Records for this project's manager; `searched` adds what matches the request, on top of the rules that always apply. */
+  memories(ticket: Ticket, projectId: string, searched: boolean): object[]
   /** Tells the person something went wrong outside any turn. */
   notice(ticketId: string, text: string): void
 }
@@ -259,7 +261,8 @@ export class ManagerExecutor implements ExecutionSteps {
     const [command, ...prefix] = settings.command
     const invocation = resolveInvocation(command ?? '', [...prefix, ...args])
     if (!invocation) throw new Error(`Command not found: ${command}`)
-    const stdin = turnCard(ticket, reason, inputIds, (id) => store.triggers.get(id))
+    const memories = this.host.memories(ticket, project.id, reason.kind === 'assignment')
+    const stdin = turnCard(ticket, reason, inputIds, (id) => store.triggers.get(id), memories)
     store.atomic(() => {
       store.set(MANAGER_TICKET(ticketId), { ...state, turns: state.turns + 1, sessionStarted: true })
       store.set(MANAGER_JOB(ticketId), {
