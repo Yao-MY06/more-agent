@@ -1,8 +1,8 @@
 /** The `resident` command. Commands that change state hand it to the runner or to plain files; only `run` opens the database for writing. */
-import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
+import { ActionError, forgetEntry, rememberRule, submitMessage, submitStop } from './actions.ts'
 import { leaderSettings, MAX_TEXT_CHARS, type Paths, pathsFor } from './config.ts'
 import { readInbox, takeUnread } from './inbox.ts'
 import { ClaudeCli } from './llm/claude-cli.ts'
@@ -11,8 +11,9 @@ import { type MemoryEntry, MemoryStore } from './memory/store.ts'
 import { addProject, loadProjects } from './projects.ts'
 import { appendReview, decisionRows, readStatus, readSummary, renderReport, triggerExists } from './report.ts'
 import { Runtime } from './runtime.ts'
-import { spoolFiles, writeSpool, writeSpoolCommand } from './spool.ts'
+import { spoolFiles, writeSpool } from './spool.ts'
 import { readTickets, renderTicket, resolveTicketId } from './tickets-view.ts'
+import { DEFAULT_PORT, startWebServer } from './web/server.ts'
 
 const TICKET_ID_CHARS = 12
 const MEMORY_PREVIEW_CHARS = 120
@@ -32,6 +33,7 @@ const USAGE = `用法：resident <命令>
   tickets [--json]                         查看工单
   stop <工单 id 前缀> [--reason 原因]      停止工单，连同它的经理和工人
   replay <文件.jsonl>                      回放历史请求，每行 {id, text, thread?, expected?}
+  web [--port 端口]                        启动只监听本机的网页面板
   run [--until-idle]                       运行
   status [--json]                          查看状态
   decisions                                以 JSON 列出全部决策
@@ -59,6 +61,17 @@ type Command = (args: string[], paths: Paths, io: Io) => number | Promise<number
 const usageError = (io: Io): number => {
   io.err(USAGE)
   return 1
+}
+
+/** Keeps the CLI's words and exit code while sharing the action that the panel calls. */
+function runCliAction(io: Io, run: () => number): number {
+  try {
+    return run()
+  } catch (error) {
+    if (!(error instanceof ActionError)) throw error
+    io.err(error.message)
+    return 1
+  }
 }
 
 const toJson = (value: unknown): string => JSON.stringify(value, null, 2)
@@ -103,9 +116,8 @@ function say(args: string[], paths: Paths, io: Io): number {
   const { values, positionals } = parseArgs({ args, options: { thread: { type: 'string' } }, allowPositionals: true })
   const text = positionals.join(' ')
   if (!text) return usageError(io)
-  const id = randomUUID()
-  writeSpool(paths, { id, source: 'cli', thread: values.thread ?? id, text, at: new Date().toISOString() })
-  io.out(`cli:${id}`)
+  const input = { text, ...(values.thread === undefined ? {} : { thread: values.thread }) }
+  io.out(submitMessage(paths, input).triggerId)
   return 0
 }
 
@@ -128,6 +140,53 @@ function replay(args: string[], paths: Paths, io: Io): number {
   })
   io.out(`已提交 ${items.length} 条回放请求`)
   return 0
+}
+
+const MAX_PORT = 65_535
+
+function parseWebPort(args: string[], io: Io): number | undefined {
+  try {
+    const { values } = parseArgs({ args, options: { port: { type: 'string' } } })
+    const raw = values.port ?? String(DEFAULT_PORT)
+    if (!/^\d+$/.test(raw) || Number(raw) > MAX_PORT) throw new Error('invalid port')
+    return Number(raw)
+  } catch {
+    io.err('端口必须是 0 到 65535 之间的整数')
+    return undefined
+  }
+}
+
+function waitForShutdown(): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      process.off('SIGINT', done)
+      process.off('SIGTERM', done)
+      resolve()
+    }
+    process.once('SIGINT', done)
+    process.once('SIGTERM', done)
+  })
+}
+
+async function web(args: string[], paths: Paths, io: Io): Promise<number> {
+  const port = parseWebPort(args, io)
+  if (port === undefined) return 1
+  let server: Awaited<ReturnType<typeof startWebServer>>
+  try {
+    server = await startWebServer({ paths, port })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw error
+    io.err(`端口 ${port} 已被占用，请用 --port 换一个端口`)
+    return 1
+  }
+  io.out(`网页面板：${server.url}`)
+  io.out('这个链接等于操作权限，不要发给别人。按 Ctrl+C 停止。')
+  try {
+    await waitForShutdown()
+    return 0
+  } finally {
+    await server.close()
+  }
 }
 
 async function run(args: string[], paths: Paths, io: Io): Promise<number> {
@@ -180,13 +239,12 @@ function stop(args: string[], paths: Paths, io: Io): number {
     io.err(`没有唯一匹配的工单：${prefix}`)
     return 1
   }
-  writeSpoolCommand(paths, {
-    command: 'stop',
-    ticketId,
-    ...(values.reason === undefined ? {} : { reason: values.reason }),
+  return runCliAction(io, () => {
+    const input = { ticketId, ...(values.reason === undefined ? {} : { reason: values.reason }) }
+    submitStop(paths, input)
+    io.out(`已提交停止 ${ticketId.slice(0, TICKET_ID_CHARS)}，runner 处理后会连同工人一起停下`)
+    return 0
   })
-  io.out(`已提交停止 ${ticketId.slice(0, TICKET_ID_CHARS)}，runner 处理后会连同工人一起停下`)
-  return 0
 }
 
 function remember(args: string[], paths: Paths, io: Io): number {
@@ -197,23 +255,20 @@ function remember(args: string[], paths: Paths, io: Io): number {
   })
   const text = positionals.join(' ')
   if (!text) return usageError(io)
-  const { project: projectId, supersedes } = values
-  if (projectId && !loadProjects(paths.projects).some((item) => item.id === projectId)) {
-    io.err(`没有登记这个项目：${projectId}`)
-    return 1
-  }
   const memory = new MemoryStore(paths.memory)
-  if (supersedes && !memory.get(supersedes)) {
-    io.err(`没有这条记忆：${supersedes}`)
-    return 1
+  try {
+    return runCliAction(io, () => {
+      const input = {
+        text,
+        ...(values.project === undefined ? {} : { project: values.project }),
+        ...(values.supersedes === undefined ? {} : { supersedes: values.supersedes }),
+      }
+      io.out(rememberRule(paths, memory, input).id)
+      return 0
+    })
+  } finally {
+    memory.close()
   }
-  const id = `remember-${randomUUID()}`
-  const scope = projectId ? projectScope(projectId) : GLOBAL_SCOPE
-  const replaces = supersedes ? { supersedes } : {}
-  memory.record({ id, at: new Date().toISOString(), origin: 'human', scope, pinned: true, body: text, ...replaces })
-  memory.close()
-  io.out(id)
-  return 0
 }
 
 function renderMemory(entry: MemoryEntry): string {
@@ -264,13 +319,12 @@ function showMemory(memory: MemoryStore, id: string, io: Io): number {
 }
 
 function forgetMemory(memory: MemoryStore, id: string, reason: string | undefined, io: Io): number {
-  if (!memory.get(id)) {
-    io.err(`没有这条记忆：${id}`)
-    return 1
-  }
-  memory.forget(id, reason ?? '用户要求忘记', new Date().toISOString())
-  io.out(`已作废 ${id}，原文仍留在记忆文件里`)
-  return 0
+  return runCliAction(io, () => {
+    const input = { id, ...(reason === undefined ? {} : { reason }) }
+    forgetEntry(memory, input)
+    io.out(`已作废 ${id}，原文仍留在记忆文件里`)
+    return 0
+  })
 }
 
 function decisions(_args: string[], paths: Paths, io: Io): number {
@@ -308,6 +362,7 @@ const COMMANDS: Record<string, Command> = {
   tickets,
   stop,
   replay,
+  web,
   run,
   status,
   decisions,

@@ -8,11 +8,12 @@ import { MANAGER_TICKET, type ManagerTicketState } from './manager/executor.ts'
 const STAGE_WORDS: Record<string, string> = { ended: '已结束', person: '等你', working: '进行中', idle: '等工人' }
 const ID_CHARS = 12
 const TITLE_CHARS = 40
-const MAX_TICKETS = 200
+const MAX_TICKETS = 100
 
 export interface TicketRow {
   id: string
   title: string
+  threadKey: string
   project?: string
   stage: string
   outcome?: string
@@ -34,6 +35,7 @@ function toRow(db: DatabaseSync, ticket: Ticket): TicketRow {
   return {
     id: ticket.id,
     title: ticket.title,
+    threadKey: ticket.channels[0]?.thread ?? '',
     stage: ticketStage(ticket).stage,
     turns: state?.turns ?? 0,
     costUsd: state?.costUsd ?? 0,

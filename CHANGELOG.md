@@ -18,6 +18,7 @@
 - 命令：`remember`、`memory list|search|show|forget`，都不需要 runner 在运行。
 - 环境变量 `RESIDENT_MEMORY=off`，用来测量没有记忆时的基线。
 - 记忆评测：`npm run eval:memory`，用真实模型跑两组，由程序判分，可以用 `--noise` 加入干扰记录。
+- 本机网页面板：`npm run resident -- web`，可对话、回答或停止工单、搜索、新增、取代和作废记忆，并显示 runner 状态；只监听本机，并用每次启动重新生成的令牌保护接口。
 
 ### 变更
 

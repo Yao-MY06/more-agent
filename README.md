@@ -82,6 +82,10 @@ npm run resident -- run --until-idle
 ```
 
 ```bash
+npm run resident -- web
+```
+
+```bash
 npm run resident -- inbox
 ```
 
@@ -100,6 +104,7 @@ npm run resident -- say "用第一种做法" --thread add
 | `tickets [--json]`                                   | 查看工单：阶段、项目、等你回答的问题、轮数和经理的牌价花费                                                                |
 | `stop <工单 id 前缀> [--reason 原因]`                | 停止工单，连同它的经理和这个项目正在跑的工人（包括审查），并把 `omh` 里对应的工单移到 `blocked`                           |
 | `replay <文件.jsonl>`                                | 回放历史请求，每行 `{id, text, thread?, expected?}`。有一行不合法就整个文件都不提交；相同 id 重放不会重复判断             |
+| `web [--port 端口]`                                  | 启动只监听 `127.0.0.1` 的网页面板，默认 4517；链接里的令牌等于操作权限。网页不会启动或停止 runner                         |
 | `run [--until-idle]`                                 | 运行，同一状态目录只允许一个。`--until-idle` 处理完就退出                                                                 |
 | `status [--json]`                                    | 状态计数                                                                                                                  |
 | `decisions`                                          | 以 JSON 输出全部决策                                                                                                      |
@@ -123,6 +128,77 @@ npm run resident -- say "用第一种做法" --thread add
 | `RESIDENT_MANAGER_COMMAND`         | `["claude"]`                                     | 替换经理的 `claude` 命令，用于测试            |
 | `RESIDENT_OMH`                     | `../opus-manager/harness/bin/omh.js`             | `omh` 的位置，相对本项目                      |
 | `RESIDENT_MANAGER_SKILL`           | `../opus-manager/skill/zh/opus-manager/SKILL.md` | opus-manager 技能文件，经理的工单流程取自这里 |
+
+## 网页面板
+
+```bash
+npm run build
+npm run resident -- web
+```
+
+终端会打印类似下面的链接：
+
+```text
+网页面板：http://127.0.0.1:4517/#token=…
+这个链接等于操作权限，不要发给别人。按 Ctrl+C 停止。
+```
+
+- 只监听 `127.0.0.1`，没有修改监听地址的选项。它不是多人系统，也不要把端口转发到局域网或公网。
+- 每次启动都会重新生成令牌。页面把令牌存进 `sessionStorage`，并立即从地址栏移除；服务重启后旧页面会提示从终端重新打开链接。
+- 面板可以发送消息、回答工单问题、停止工单、查看/搜索/新增/取代/作废记忆。runner 没运行时仍可发消息，消息会排队。
+- 面板只显示 runner 是否在运行和启动方法，不会从网页启动或停止 runner。
+- 所有数据库读取都使用只读连接；写入仍走 CLI 相同的 spool 或 Markdown 通道。查看网页不会消耗 `inbox` 的未读状态。
+
+### HTTP 接口
+
+所有 `/api` 请求都要带 `Authorization: Bearer <令牌>`。有 `Origin` 时它必须是本服务地址；POST 只接受 `application/json`，请求体上限 128 KiB。响应统一为：
+
+```json
+{ "ok": true, "data": {} }
+```
+
+```json
+{ "ok": false, "error": { "code": "E_BAD_REQUEST", "message": "给人看的中文说明" } }
+```
+
+| 错误码                | 状态码 | 含义                               |
+| --------------------- | ------ | ---------------------------------- |
+| `E_BAD_REQUEST`       | 400    | 参数、JSON 或查询不合法            |
+| `E_UNAUTHORIZED`      | 401    | 令牌缺失或错误                     |
+| `E_FORBIDDEN`         | 403    | `Host` 或 `Origin` 不正确          |
+| `E_NOT_FOUND`         | 404    | 路径、工单、记忆或项目不存在       |
+| `E_CONFLICT`          | 409    | 工单已结束、回放话题只读等状态冲突 |
+| `E_TOO_LARGE`         | 413    | 请求体超过 128 KiB                 |
+| `E_UNSUPPORTED_MEDIA` | 415    | POST 不是 JSON                     |
+| `E_INTERNAL`          | 500    | 内部错误；详情只写到服务端 stderr  |
+
+| 方法和路径                              | 输入                                                 | `data`                                                  |
+| --------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| `GET /api/overview`                     |                                                      | `{ runnerUp, status, projects: [{ id, execute }] }`     |
+| `GET /api/threads?limit=`               | 默认和上限 100                                       | `{ threads: [{ key, lastAt, preview, messageCount }] }` |
+| `GET /api/threads/:key/messages?limit=` | `key` URL 编码，默认和上限 100                       | `{ messages: ConversationMessage[] }`                   |
+| `POST /api/messages`                    | `{ text, thread? }`，`thread` 是话题 id，不带 `cli:` | `{ triggerId, threadKey }`                              |
+| `GET /api/tickets`                      |                                                      | `{ tickets: TicketRow[] }`，最多 100 张                 |
+| `POST /api/tickets/:id/stop`            | `{ reason? }`，`id` 必须是完整 id                    | `{ ticketId }`                                          |
+| `GET /api/memory?q=&project=&limit=`    | 无 `q` 时列最新；最多 100 条                         | `{ entries: MemoryEntry[] }`                            |
+| `GET /api/memory/:id`                   | `id` URL 编码                                        | `{ entry: MemoryEntry }`                                |
+| `POST /api/memory`                      | `{ text, project?, supersedes? }`                    | `{ id }`                                                |
+| `POST /api/memory/:id/forget`           | `{ reason? }`                                        | `{ id }`                                                |
+
+回答工单问题没有单独接口：向这张工单的 `threadKey` 对应话题发 `POST /api/messages`。`replay:` 话题只读，会返回 409。
+
+```bash
+curl -H "Authorization: Bearer <令牌>" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"给 demo 加一个 add 函数"}' \
+  http://127.0.0.1:4517/api/messages
+```
+
+```json
+{ "ok": true, "data": { "triggerId": "cli:1f0c…", "threadKey": "cli:1f0c…" } }
+```
+
+令牌会出现在终端历史和屏幕上；能读到它的人已经能直接操作状态目录。本机其他程序也能连这个端口，令牌能挡住不知道令牌的请求，但这不是安全沙箱。消息内容仍可能诱导 Leader，风险和 CLI 相同。
 
 ## 保证和限制
 

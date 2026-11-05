@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>resident 网页面板</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="stylesheet" href="/style.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">resident</div>
+      <div id="runner-indicator" class="runner-indicator" aria-live="polite">正在连接…</div>
+      <section class="counters" aria-label="运行概况">
+        <span id="queue-count">排队 0</span>
+        <span id="ticket-count">工单 0</span>
+      </section>
+      <nav class="main-nav" aria-label="主导航">
+        <button type="button" data-view="chat" aria-pressed="true">对话</button>
+        <button type="button" data-view="memory" aria-pressed="false">记忆</button>
+      </nav>
+    </header>
+
+    <div id="connection-banner" class="connection-banner" role="alert" hidden></div>
+    <div id="runner-banner" class="runner-banner" role="status" hidden>
+      <strong>runner 没在运行，消息会排队</strong>
+      <span>需要处理时，在另一个终端运行：</span>
+      <code>npm run resident -- run</code>
+    </div>
+
+    <nav id="mobile-panel-nav" class="mobile-panel-nav" aria-label="对话区域">
+      <button type="button" data-mobile-panel="topics" aria-pressed="false">话题</button>
+      <button type="button" data-mobile-panel="conversation" aria-pressed="true">对话</button>
+      <button type="button" data-mobile-panel="tickets" aria-pressed="false">工单</button>
+    </nav>
+
+    <main id="workspace" class="workspace" data-view="chat" data-mobile-panel="conversation">
+      <section id="thread-panel" class="thread-panel" aria-label="话题列表"></section>
+      <section id="conversation-panel" class="conversation-panel" aria-label="对话内容"></section>
+      <section id="tickets-panel" class="tickets-panel" aria-label="工单列表"></section>
+      <section id="memory-panel" class="memory-panel" aria-label="记忆"></section>
+    </main>
+  </body>
+</html>
+
+
+
+
+

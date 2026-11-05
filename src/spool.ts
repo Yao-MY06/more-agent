@@ -3,7 +3,7 @@
  * requires, so a command in another process hands over a file instead, and that works while no runner is up.
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { Trigger } from '../vendor/dsh-superagent/src/core/index.ts'
@@ -15,12 +15,13 @@ const SPOOL_SUFFIX = '.json'
 const TIME_DIGITS = 15
 const COUNTER_DIGITS = 6
 const EXPECTED_CHARS = 80
+export const THREAD_ID_PATTERN = /^[\w.-]{1,120}$/
 
 export const SpoolItemSchema = z
   .object({
     id: z.string().regex(/^[\w.-]{1,120}$/),
     source: z.enum(LOCAL_SOURCES),
-    thread: z.string().regex(/^[\w.-]{1,120}$/),
+    thread: z.string().regex(THREAD_ID_PATTERN),
     text: z.string().trim().min(1).max(MAX_TEXT_CHARS),
     at: z.iso.datetime(),
     expected: z.string().min(1).max(EXPECTED_CHARS).optional(),
@@ -64,6 +65,18 @@ export function spoolFiles(paths: Paths): string[] {
   return readdirSync(paths.spool)
     .filter((name) => name.endsWith(SPOOL_SUFFIX))
     .sort()
+}
+
+/** Read-only: the panel may look while the runner is down, but must not take or move any waiting item. */
+export function pendingSpoolItems(paths: Paths): SpoolItem[] {
+  if (!existsSync(paths.spool)) return []
+  return readdirSync(paths.spool)
+    .filter((name) => name.endsWith(SPOOL_SUFFIX))
+    .sort()
+    .flatMap((name) => {
+      const entry = parseEntry(join(paths.spool, name))
+      return entry && !('command' in entry) ? [entry] : []
+    })
 }
 
 /**

@@ -474,7 +474,15 @@ describe('the tickets command', { timeout: TEST_TIMEOUT_MS }, () => {
     await main(['tickets'], { out: (line) => lines.push(line), err: () => {} }, home())
     expect(lines).toEqual(['还没有工单'])
     expect(
-      renderTicket({ id: 'abc', title: 't', stage: 'ended', outcome: 'completed', turns: 0, costUsd: 0 }),
+      renderTicket({
+        id: 'abc',
+        title: 't',
+        threadKey: 'cli:t',
+        stage: 'ended',
+        outcome: 'completed',
+        turns: 0,
+        costUsd: 0,
+      }),
     ).toContain('已结束')
     appendInbox(home(), { id: 'x', at: 'now', thread: 'cli:t', kind: 'notice', text: 't' })
   })
