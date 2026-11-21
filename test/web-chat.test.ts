@@ -74,7 +74,7 @@ describe.runIf(BROWSER_PATH)('conversation in a real browser', () => {
       await runtime.runUntilIdle(undefined, 15_000)
       expect(readInbox(paths).entries.map((entry) => entry.text)).toContain('Fake acknowledgement.')
       await browser.waitFor("document.body.innerText.includes('Fake acknowledgement.')", 12_000)
-      await browser.waitFor("document.body.innerText.includes('已判断：demo')", 12_000)
+      await browser.waitFor("document.body.innerText.includes('已交给项目：demo')", 12_000)
       expect(browser.errors).toEqual([])
     } finally {
       await runtime.close()
