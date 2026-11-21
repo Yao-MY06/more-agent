@@ -1,3 +1,7 @@
 node_modules/
 lib/
 coverage/
+# opus-manager harness state: tickets, receipts and worker config stay local
+_tickets/
+_receipts/
+.omh/
