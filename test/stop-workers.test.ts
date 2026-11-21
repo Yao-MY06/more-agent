@@ -9,8 +9,8 @@ import { useHome } from './helpers.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FAKE_OMH = join(HERE, 'fixtures', 'fake-omh.mjs')
-const REAL_OMH = join(HERE, '..', '..', 'opus-manager', 'harness', 'bin', 'omh.js')
-const REAL_WORKER = join(HERE, '..', '..', 'opus-manager', 'harness', 'test', 'fixtures', 'fake-worker.js')
+const REAL_OMH = join(HERE, '..', 'vendor', 'opus-manager', 'harness', 'bin', 'omh.js')
+const REAL_WORKER = join(HERE, '..', 'vendor', 'opus-manager', 'harness', 'test', 'fixtures', 'fake-worker.js')
 const REASON = '工单被停止'
 const POLL_MS = 100
 const WAIT_LIMIT_MS = 15_000

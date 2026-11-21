@@ -2,13 +2,15 @@
 
 more-agent 的常驻层：用户只和一个 Leader 对话，由它判断每条请求该交给哪个项目。
 
-你对 Leader 说一件事，它判断归哪个项目，交给那个项目的经理会话；经理用 [`omh`](https://github.com/yanauto/opus-manager) 派工人、验收；结果再由 Leader 用几句话告诉你。
+你对 Leader 说一件事，它判断归哪个项目，交给那个项目的经理会话；经理用 [`omh`](vendor/opus-manager/UPSTREAM.md) 派工人、验收；结果再由 Leader 用几句话告诉你。
 
 **每个项目默认只做影子运行：Leader 只记录“本来会派给谁、会说什么”，什么都不执行。** 登记时加 `--execute` 才会真的运行。
 
 ## 组成
 
 引擎不是自己写的。`vendor/dsh-superagent/` 来自 DeepSeek 开源的 [dsh-superagent-prototype](https://github.com/deepseek-ai/dsh-superagent-prototype)（MIT），`src/core` 原样未改，上游测试也一起带过来运行。来源和改动见 [UPSTREAM.md](vendor/dsh-superagent/UPSTREAM.md)。
+
+派工的 `omh` 和经理的工单流程来自 [opus-manager](https://github.com/yanauto/opus-manager)（MIT）的分叉，快照放在 `vendor/opus-manager/`，克隆本仓库即可使用，不用另装。来源和改动见 [UPSTREAM.md](vendor/opus-manager/UPSTREAM.md)。
 
 本仓库只写了上游绑定在 DSH 上、需要换掉的部分：
 
@@ -115,19 +117,19 @@ npm run resident -- say "用第一种做法" --thread add
 
 **环境变量**
 
-| 变量                               | 默认值                                           | 说明                                          |
-| ---------------------------------- | ------------------------------------------------ | --------------------------------------------- |
-| `RESIDENT_HOME`                    | `~/.more-agent`                                  | 状态目录                                      |
-| `RESIDENT_LEADER_MODEL`            | `claude-opus-5-5`                                | Leader 模型                                   |
-| `RESIDENT_LEADER_EFFORT`           | `medium`                                         | Leader 强度                                   |
-| `RESIDENT_LEADER_COMMAND`          | `["claude"]`                                     | 替换 `claude` 的命令，JSON 数组，用于测试     |
-| `RESIDENT_MEMORY`                  | 开                                               | `off` 时卡片上没有任何记忆，用来测量基线      |
-| `RESIDENT_MANAGER_MODEL`           | `claude-opus-5-5`                                | 经理模型                                      |
-| `RESIDENT_MANAGER_EFFORT`          | `medium`                                         | 经理强度                                      |
-| `RESIDENT_MANAGER_TURN_BUDGET_USD` | `3`                                              | 单轮牌价上限                                  |
-| `RESIDENT_MANAGER_COMMAND`         | `["claude"]`                                     | 替换经理的 `claude` 命令，用于测试            |
-| `RESIDENT_OMH`                     | `../opus-manager/harness/bin/omh.js`             | `omh` 的位置，相对本项目                      |
-| `RESIDENT_MANAGER_SKILL`           | `../opus-manager/skill/zh/opus-manager/SKILL.md` | opus-manager 技能文件，经理的工单流程取自这里 |
+| 变量                               | 默认值                                               | 说明                                          |
+| ---------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
+| `RESIDENT_HOME`                    | `~/.more-agent`                                      | 状态目录                                      |
+| `RESIDENT_LEADER_MODEL`            | `claude-opus-5-5`                                    | Leader 模型                                   |
+| `RESIDENT_LEADER_EFFORT`           | `medium`                                             | Leader 强度                                   |
+| `RESIDENT_LEADER_COMMAND`          | `["claude"]`                                         | 替换 `claude` 的命令，JSON 数组，用于测试     |
+| `RESIDENT_MEMORY`                  | 开                                                   | `off` 时卡片上没有任何记忆，用来测量基线      |
+| `RESIDENT_MANAGER_MODEL`           | `claude-opus-5-5`                                    | 经理模型                                      |
+| `RESIDENT_MANAGER_EFFORT`          | `medium`                                             | 经理强度                                      |
+| `RESIDENT_MANAGER_TURN_BUDGET_USD` | `3`                                                  | 单轮牌价上限                                  |
+| `RESIDENT_MANAGER_COMMAND`         | `["claude"]`                                         | 替换经理的 `claude` 命令，用于测试            |
+| `RESIDENT_OMH`                     | `vendor/opus-manager/harness/bin/omh.js`             | `omh` 的位置，相对本项目                      |
+| `RESIDENT_MANAGER_SKILL`           | `vendor/opus-manager/skill/zh/opus-manager/SKILL.md` | opus-manager 技能文件，经理的工单流程取自这里 |
 
 ## 网页面板
 
@@ -256,4 +258,4 @@ npm run coverage
 
 ## 许可
 
-本项目以 [MIT 许可](LICENSE) 发布。`vendor/dsh-superagent/` 来自 DeepSeek 的 dsh-superagent-prototype，沿用它自己的 [MIT 许可](vendor/dsh-superagent/LICENSE)。
+本项目以 [MIT 许可](LICENSE) 发布。`vendor/dsh-superagent/` 来自 DeepSeek 的 dsh-superagent-prototype，沿用它自己的 [MIT 许可](vendor/dsh-superagent/LICENSE)。`vendor/opus-manager/` 来自 yanauto 的 opus-manager，沿用它的 [MIT 许可](vendor/opus-manager/LICENSE)。

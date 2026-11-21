@@ -1,0 +1,42 @@
+[
+  {
+    "type": "message",
+    "role": "user",
+    "content": [
+      {
+        "type": "input_text",
+        "text": "<user_query>只回答 ok</user_query>"
+      }
+    ]
+  },
+  {
+    "type": "message",
+    "role": "assistant",
+    "providerData": {
+      "model": "deepseek-v4.1-flash",
+      "rawUsage": {
+        "prompt_tokens": 25160,
+        "completion_tokens": 2,
+        "credit": 0.36
+      }
+    },
+    "content": [
+      {
+        "type": "output_text",
+        "text": "ok"
+      }
+    ]
+  },
+  {
+    "type": "result",
+    "subtype": "success",
+    "is_error": false,
+    "result": "ok",
+    "num_turns": 2,
+    "total_cost_usd": 0,
+    "usage": {
+      "input_tokens": 25160,
+      "output_tokens": 2
+    }
+  }
+]

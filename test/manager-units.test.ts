@@ -22,7 +22,7 @@ import { usage, useHome } from './helpers.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FAKE_OMH = join(HERE, 'fixtures', 'fake-omh.mjs')
-const REAL_OMH = join(HERE, '..', '..', 'opus-manager', 'harness', 'bin', 'omh.js')
+const REAL_OMH = join(HERE, '..', 'vendor', 'opus-manager', 'harness', 'bin', 'omh.js')
 const OLD_ENOUGH_MS = 10 * 60_000
 /** Starting real processes takes seconds when the whole suite runs at once. */
 const REAL_PROCESS_TIMEOUT_MS = 30_000
@@ -190,7 +190,7 @@ describe('manager prompt', () => {
 })
 
 describe('manager settings', () => {
-  it('defaults to Opus 5.5 at medium effort, and finds opus-manager beside this project', () => {
+  it('defaults to Opus 5.5 at medium effort, and uses the omh copy in vendor', () => {
     const settings = managerSettings({})
     expect(settings).toMatchObject({
       model: 'claude-opus-5-5',
@@ -198,7 +198,13 @@ describe('manager settings', () => {
       command: ['claude'],
       turnBudgetUsd: 3,
     })
-    expect(settings.omh.replaceAll('\\', '/')).toContain('opus-manager/harness/bin/omh.js')
+    expect(settings.omh.replaceAll('\\', '/')).toContain('vendor/opus-manager/harness/bin/omh.js')
+    expect(settings.skill.replaceAll('\\', '/')).toContain('vendor/opus-manager/skill/zh/opus-manager/SKILL.md')
+  })
+  it('默认的 omh 和技能文件都在仓库里，克隆后不用另放 opus-manager', () => {
+    const settings = managerSettings({})
+    expect(existsSync(settings.omh)).toBe(true)
+    expect(existsSync(settings.skill)).toBe(true)
   })
   it('takes overrides from the environment', () => {
     const settings = managerSettings({

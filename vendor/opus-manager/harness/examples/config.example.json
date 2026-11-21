@@ -1,0 +1,59 @@
+{
+  "$comment": "Example .omh/config.json modelled on the author's setups (README 'Field data'). Model ids are placeholders: take real ones from each tool's model list. consent must come from the user.",
+  "lang": "zh",
+  "maxParallel": 3,
+  "timeouts": { "buildMin": 60, "reviewMin": 30, "idleWarnMin": 10, "checkMin": 10 },
+  "budget": { "totalUsd": 15, "perTicketUsd": 3 },
+  "limits": { "provider": { "opencode-go": 2 } },
+  "maxAttempts": 2,
+  "routing": {
+    "default": ["deepseek", "grok"],
+    "backend": ["gpt", "deepseek"],
+    "ops": ["gpt"],
+    "docs-zh": ["deepseek"],
+    "refactor": ["gpt-deep"],
+    "frontend": ["grok", "deepseek"]
+  },
+  "review": { "requireDifferentVendor": true, "reviewers": ["glm", "gemini"] },
+  "acceptanceProfiles": [
+    {
+      "id": "harness",
+      "title": "omh harness",
+      "match": ["harness/src/**", "harness/bin/**"],
+      "commands": [{ "purpose": "unit tests", "cmd": "cd harness && node --test test/*.test.js" }]
+    }
+  ],
+  "workers": {
+    "deepseek": {
+      "adapter": "pi", "provider": "opencode-go", "model": "<deepseek model id>", "vendor": "deepseek",
+      "roles": ["build"], "concurrency": 2, "budgetUsd": 10,
+      "consent": { "codeAccess": true, "autoApprove": true }
+    },
+    "gpt": {
+      "adapter": "codex", "model": "<gpt model id>", "vendor": "openai",
+      "roles": ["build", "review"],
+      "consent": { "codeAccess": true, "autoApprove": true }
+    },
+    "gpt-deep": {
+      "adapter": "codex", "model": "<large gpt model id>", "vendor": "openai",
+      "roles": ["build", "review"],
+      "consent": { "codeAccess": true, "autoApprove": true }
+    },
+    "grok": {
+      "adapter": "cursor-agent", "model": "<grok model id>", "vendor": "xai",
+      "roles": ["build"],
+      "consent": { "codeAccess": true, "autoApprove": true }
+    },
+    "glm": {
+      "adapter": "pi", "provider": "opencode-go", "model": "<glm model id>", "vendor": "zhipu",
+      "roles": ["review"],
+      "consent": { "codeAccess": true }
+    },
+    "gemini": {
+      "adapter": "gemini", "model": "<gemini model id>", "vendor": "google",
+      "roles": ["review"], "concurrency": 1,
+      "consent": { "codeAccess": true }
+    }
+  },
+  "adapters": {}
+}

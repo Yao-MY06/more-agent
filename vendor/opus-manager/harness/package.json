@@ -1,0 +1,21 @@
+{
+  "name": "opus-harness",
+  "version": "0.3.0",
+  "description": "Multi-model harness for opus-manager: Claude Code manages, other AI CLIs build and review.",
+  "type": "module",
+  "bin": {
+    "omh": "bin/omh.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates"
+  ],
+  "license": "MIT"
+}

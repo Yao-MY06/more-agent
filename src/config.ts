@@ -50,8 +50,8 @@ const DEFAULT_MANAGER_MODEL = 'claude-opus-5-5'
 const DEFAULT_MANAGER_EFFORT = 'medium'
 const DEFAULT_MANAGER_TURN_BUDGET_USD = 3
 const SUPERVISOR_SCRIPT = 'scripts/turn-supervisor.mjs'
-const DEFAULT_OMH = '../opus-manager/harness/bin/omh.js'
-const DEFAULT_SKILL = '../opus-manager/skill/zh/opus-manager/SKILL.md'
+const DEFAULT_OMH = 'vendor/opus-manager/harness/bin/omh.js'
+const DEFAULT_SKILL = 'vendor/opus-manager/skill/zh/opus-manager/SKILL.md'
 
 /** The project root, whether this code runs from source or from `lib/`. */
 export function projectRoot(from: string = dirname(fileURLToPath(import.meta.url))): string {
