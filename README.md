@@ -253,3 +253,7 @@ npm run coverage
 克隆后执行 `git config core.hooksPath .githooks`，lint 或类型错误就会阻断提交。
 
 格式化和 lint 用 Biome，`vendor/` 不参与。修改 `vendor/` 前先看 [UPSTREAM.md](vendor/dsh-superagent/UPSTREAM.md)。
+
+## 许可
+
+本项目以 [MIT 许可](LICENSE) 发布。`vendor/dsh-superagent/` 来自 DeepSeek 的 dsh-superagent-prototype，沿用它自己的 [MIT 许可](vendor/dsh-superagent/LICENSE)。

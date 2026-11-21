@@ -1,7 +1,23 @@
 {
   "name": "more-agent-resident",
   "version": "0.1.0",
-  "description": "Resident leader layer for more-agent. M0: shadow routing only, nothing is executed.",
+  "description": "常驻 Leader：你只和它对话，它把每条请求交给对应项目的经理会话，经理用 omh 派工人、验收，结果再由它转告你。",
+  "author": "Yao-MY06",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yao-MY06/more-agent.git"
+  },
+  "homepage": "https://github.com/Yao-MY06/more-agent#readme",
+  "bugs": {
+    "url": "https://github.com/Yao-MY06/more-agent/issues"
+  },
+  "keywords": [
+    "agent",
+    "claude-code",
+    "orchestration",
+    "multi-agent",
+    "leader"
+  ],
   "type": "module",
   "private": true,
   "license": "MIT",
